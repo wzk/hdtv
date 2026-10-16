@@ -60,6 +60,7 @@ class VideoListButton extends React.Component {
                                                 list.date}
                                             `}
                                             setOpenIndex={this.setOpenIndex}
+                                            onVideoClick={this.closeList}
                                             channel={this.props.channel}
                                             index={index} 
                                             currentStartTime={currentStartTime}

@@ -99,6 +99,25 @@ const fmt = (t) => {
     return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s)
 }
 
+// 回看 timeline 格式: "startTime-endTime" (Unix秒), 解析出节目开始的实际时间
+const getTimelineStart = (timeline) => {
+    if (!timeline) {
+        return 0
+    }
+    const start = parseInt(timeline.split("-")[0], 10)
+    return isNaN(start) ? 0 : start
+}
+
+// 节目实际时钟时间 (HH:mm:ss): 起始时间戳 + 相对播放秒数
+const fmtClock = (unixSeconds) => {
+    if (!isFinite(unixSeconds) || unixSeconds <= 0) {
+        return null
+    }
+    const d = new Date(unixSeconds * 1000)
+    const pad = (n) => (n < 10 ? "0" + n : "" + n)
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds())
+}
+
 const FULLSCREEN_EVENTS = [
     "fullscreenchange",
     "webkitfullscreenchange",
@@ -201,9 +220,11 @@ class Player extends React.Component {
                                 </div>
                                 {s.thumb ? (
                                     <div className="hp-thumb" style={{ left: s.thumb.x + "px" }}>
-                                        <div className="hp-thumb-img"
-                                            style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
-                                        <div className="hp-thumb-time">{fmt(s.thumb.time)}</div>
+                                        {s.thumb.ok ? (
+                                            <div className="hp-thumb-img"
+                                                style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
+                                        ) : null}
+                                        <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
                                     </div>
                                 ) : null}
                             </div>
@@ -220,7 +241,7 @@ class Player extends React.Component {
                                 </div>
                             ) : (
                                 <div className="hp-time">
-                                    {fmt(s.currentTime)}{hasDuration ? " / " + fmt(s.duration) : ""}
+                                    {this.fmtTime(s.currentTime)}{hasDuration ? " / " + this.fmtTime(s.duration) : ""}
                                 </div>
                             )}
                             <div className="hp-spacer" />
@@ -886,6 +907,15 @@ class Player extends React.Component {
 
     // ------- 进度条与缩略图 -------
 
+    // 回看时显示节目实际播放时间(时钟), 直播/无时间线时显示相对时长
+    fmtTime(sec) {
+        const start = getTimelineStart(this.props.timeline)
+        if (start > 0 && isFinite(sec)) {
+            return fmtClock(start + sec) || fmt(sec)
+        }
+        return fmt(sec)
+    }
+
     seekByEvent(e) {
         const bar = this.barRef.current
         const video = this.videoRef.current
@@ -986,28 +1016,34 @@ class Player extends React.Component {
         const seconds = Math.floor(ratio * duration)
         const x = Math.min(Math.max(ratio * rect.width, 84), Math.max(84, rect.width - 84))
 
-        const setThumb = (url) => {
-            this.setState({ thumb: { url, x, time: seconds } })
+        // ok=false 时只显示时间不显示图片(加载中或加载失败)
+        const setThumb = (url, ok) => {
+            this.setState({ thumb: { url: url, x: x, time: seconds, ok: ok } })
         }
 
+        // thumbCache: 有值为已加载成功的url, null为加载失败(避免重复请求)
         const cached = this.thumbCache[seconds]
-        if (cached) {
-            setThumb(cached)
+        if (cached !== undefined) {
+            setThumb(cached, cached !== null)
             this.lastThumbSecond = seconds
-            return
-        }
-        if (seconds === this.lastThumbSecond) {
             return
         }
         this.lastThumbSecond = seconds
         const seq = ++this.thumbSeq
         const url = this.props.thumbnails
             .replace("{time}", seconds / THUMB_INTERVAL + THUMB_START_INDEX)
+        setThumb(null, false) // 立即显示时间, 图片加载成功后再显示
         const img = new Image()
         img.onload = () => {
             this.thumbCache[seconds] = url
             if (seq === this.thumbSeq) {
-                setThumb(url)
+                setThumb(url, true)
+            }
+        }
+        img.onerror = () => {
+            this.thumbCache[seconds] = null
+            if (seq === this.thumbSeq) {
+                setThumb(null, false)
             }
         }
         img.src = url

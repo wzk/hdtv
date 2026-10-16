@@ -54,7 +54,8 @@ const VideoList = (props) => {
                             return (
                                 <Link to={`/${config.version}/player/${props.channel}/${
                                     videoInfo.startTime}-${videoInfo.endTime}`
-                                } key={`${props.channel}-${videoInfo.startTime}`}>
+                                } key={`${props.channel}-${videoInfo.startTime}`}
+                                    onClick={props.onVideoClick}>
                                     <ListItem divider button className={
                                         classes.nested
                                     }>
