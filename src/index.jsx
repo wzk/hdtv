@@ -1,3 +1,13 @@
+// polyfill: 兼容不支持新 API 的浏览器 (IE11 / 旧 Safari 等)
+// 需在最前面引入, 顺序不能变
+import "core-js/es/promise"
+import "core-js/es/object/assign"
+import "core-js/es/array/includes"
+import "core-js/es/array/find"
+import "core-js/es/array/find-index"
+import "core-js/es/string/includes"
+import "whatwg-fetch"
+
 import React from 'react'
 import ReactDOM from "react-dom"
 import {
