@@ -77,6 +77,17 @@
     position: relative;
     height: 14px;
     cursor: pointer;
+    touch-action: none;
+}
+
+/* 扩大触屏拖动热区(视觉不变) */
+.hp-progress::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -14px;
+    bottom: -14px;
 }
 
 .hp-progress-inner {

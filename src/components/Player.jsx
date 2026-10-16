@@ -25,6 +25,8 @@ const CONTROLS_HIDE_DELAY = 3000
 // 缩略图配置与原 flowplayer 插件一致: interval=1, startIndex=1, preload=false
 const THUMB_INTERVAL = 1
 const THUMB_START_INDEX = 1
+// 触屏拖动进度条时按此秒数取整取图, 减少移动网络请求量
+const THUMB_COARSE = 5
 
 const isPc = (() => {
     var userAgentInfo = navigator.userAgent
@@ -38,9 +40,6 @@ const isPc = (() => {
     }
     return flag
 })()
-
-const isTouch = ("ontouchstart" in window) ||
-    (navigator.maxTouchPoints ? navigator.maxTouchPoints > 0 : false)
 
 const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
@@ -967,20 +966,35 @@ class Player extends React.Component {
         if (this.props.isLive || !this.state.duration) {
             return
         }
-        this.hideThumb()
+        // 阻止页面滚动与合成鼠标事件, 拖动预览由 touch 事件完成
+        e.preventDefault()
         this.dragging = true
-        this.seekByEvent(e)
+        // 触屏拖动: 先预览(缩略图+时间), 松手才跳转
+        this.updateThumb(e, true)
     }
 
     onBarTouchMove(e) {
         if (this.dragging) {
             e.preventDefault()
-            this.seekByEvent(e)
+            this.updateThumb(e, true)
         }
     }
 
-    onBarTouchEnd() {
+    onBarTouchEnd(e) {
+        if (!this.dragging) {
+            return
+        }
         this.dragging = false
+        // 松手: 跳转到预览位置(即拖动时显示的当前时间)
+        const thumb = this.state.thumb
+        const video = this.videoRef.current
+        if (thumb && isFinite(thumb.time) && video && !this.props.isLive) {
+            video.currentTime = thumb.time
+        }
+        if (e && e.changedTouches && e.changedTouches[0]) {
+            this.touchedAt = Date.now() // 避免松手后的合成点击触发视频暂停
+        }
+        this.hideThumb()
         this.showControls()
     }
 
@@ -996,17 +1010,26 @@ class Player extends React.Component {
         this.hideThumb()
     }
 
-    updateThumb(e) {
+    updateThumb(e, coarse) {
         const bar = this.barRef.current
-        if (!bar || this.props.isLive || !this.props.thumbnails || isTouch) {
+        if (!bar || this.props.isLive || !this.props.thumbnails) {
             return
         }
         const duration = this.state.duration
         if (!duration || !isFinite(duration)) {
             return
         }
+        // 触屏 TouchEvent 没有 clientX, 取第一个触点
+        let clientX = e.clientX
+        if (clientX === undefined) {
+            const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+            if (!t) {
+                return
+            }
+            clientX = t.clientX
+        }
         const rect = bar.getBoundingClientRect()
-        let ratio = (e.clientX - rect.left) / rect.width
+        let ratio = (clientX - rect.left) / rect.width
         if (ratio < 0) {
             ratio = 0
         }
@@ -1016,13 +1039,18 @@ class Player extends React.Component {
         const seconds = Math.floor(ratio * duration)
         const x = Math.min(Math.max(ratio * rect.width, 84), Math.max(84, rect.width - 84))
 
+        // 触屏拖动按 THUMB_COARSE 秒粒度取图(减少请求量), 时间仍显示精确秒
+        const cacheKey = coarse
+            ? Math.floor(seconds / THUMB_COARSE) * THUMB_COARSE
+            : seconds
+
         // ok=false 时只显示时间不显示图片(加载中或加载失败)
         const setThumb = (url, ok) => {
             this.setState({ thumb: { url: url, x: x, time: seconds, ok: ok } })
         }
 
         // thumbCache: 有值为已加载成功的url, null为加载失败(避免重复请求)
-        const cached = this.thumbCache[seconds]
+        const cached = this.thumbCache[cacheKey]
         if (cached !== undefined) {
             setThumb(cached, cached !== null)
             this.lastThumbSecond = seconds
@@ -1031,17 +1059,17 @@ class Player extends React.Component {
         this.lastThumbSecond = seconds
         const seq = ++this.thumbSeq
         const url = this.props.thumbnails
-            .replace("{time}", seconds / THUMB_INTERVAL + THUMB_START_INDEX)
+            .replace("{time}", cacheKey / THUMB_INTERVAL + THUMB_START_INDEX)
         setThumb(null, false) // 立即显示时间, 图片加载成功后再显示
         const img = new Image()
         img.onload = () => {
-            this.thumbCache[seconds] = url
+            this.thumbCache[cacheKey] = url
             if (seq === this.thumbSeq) {
                 setThumb(url, true)
             }
         }
         img.onerror = () => {
-            this.thumbCache[seconds] = null
+            this.thumbCache[cacheKey] = null
             if (seq === this.thumbSeq) {
                 setThumb(null, false)
             }
