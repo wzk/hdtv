@@ -105,7 +105,7 @@ const fmt = (t) => {
 }
 
 // 回看 timeline 格式: "startTime-endTime" (Unix秒), 解析出节目开始的实际时间
-// 时移 timeline 格式: "ts-{startTime}", 同样解析出起点
+// 时移 timeline 格式: "ts-{begin}-{chosenAt}", 取 begin(开始播放时间)
 const getTimelineStart = (timeline) => {
     if (!timeline) {
         return 0
@@ -309,6 +309,18 @@ class Player extends React.Component {
                                 <React.Fragment>
                                     <div className="hp-live">
                                         <span className="hp-live-dot" />{mode === "timeshift" ? "时移" : "直播"}
+                                        {/* 直播: 当前真实时间; 时移: 当前播放的内容时刻(跨天带日期) */}
+                                        {mode === "timeshift" ? (
+                                            this.contentBase > 0 ? (
+                                                <span className="hp-live-clock">
+                                                    {fmtClockDate(this.contentBase + s.currentTime)}
+                                                </span>
+                                            ) : null
+                                        ) : (
+                                            <span className="hp-live-clock">
+                                                {fmtClock(s.now / 1000)}
+                                            </span>
+                                        )}
                                     </div>
                                     {/* 时移页提供一键回到直播(点击时移轴最右端也可以) */}
                                     {mode === "timeshift" && this.props.onBackToLive ? (
@@ -394,7 +406,8 @@ class Player extends React.Component {
             controlsVisible: true,
             isFullscreen: false,
             thumb: null,
-            showUnmuteHint: false
+            showUnmuteHint: false,
+            now: Date.now()
         }
 
         this.containerRef = React.createRef()
@@ -407,6 +420,11 @@ class Player extends React.Component {
         this.savedInfo = {}
         this.timer = null
         this.hideTimer = null
+        // 每秒时钟: 直播页显示当前时间 / 时移页显示当前播放的内容时刻
+        this.clockTimer = null
+        // 时移内容时刻基准 (unix秒): 载入时按 {begin}-{chosenAt} 跨度校准,
+        // 内容时刻 = contentBase + currentTime (切源重载/暂停均正确)
+        this.contentBase = 0
         this.thumbCache = {}
         this.lastThumbSecond = -1
         this.thumbSeq = 0
@@ -515,6 +533,13 @@ class Player extends React.Component {
         })
 
         document.addEventListener("keyup", this.keyupHandler)
+
+        // 每秒刷新时钟 (直播: 当前时间; 时移: 当前播放的内容时刻; 回看不依赖)
+        this.clockTimer = setInterval(() => {
+            if (this.mode() !== "review") {
+                this.setState({ now: Date.now() })
+            }
+        }, 1000)
     }
 
     componentDidUpdate(prevProps) {
@@ -539,8 +564,8 @@ class Player extends React.Component {
 
         clearInterval(this.timer)
 
-        // 回看/时移节目, 定期记录播放进度
-        if (this.props.timeline) {
+        // 回看节目定期记录播放进度 (时移是延迟的直播, 不记录)
+        if (this.props.timeline && this.mode() === "review") {
             this.timer = setInterval(this.saveProgress, SAVE_INTERVAL)
         }
     }
@@ -555,6 +580,7 @@ class Player extends React.Component {
         this.saveProgress()
 
         clearInterval(this.timer)
+        clearInterval(this.clockTimer)
         clearTimeout(this.hideTimer)
 
         const video = this.videoRef.current
@@ -675,6 +701,10 @@ class Player extends React.Component {
     }
 
     saveProgress() {
+        // 只有回看需要记忆播放进度; 时移是"延迟的直播", 刷新/重进总是从所选时刻开播
+        if (this.mode() !== "review") {
+            return
+        }
         const video = this.videoRef.current
         if (!video) {
             return
@@ -773,6 +803,13 @@ class Player extends React.Component {
         // 时移流: 原生 HLS(Safari)会从直播边缘开播, 回到流起点(时移开始时刻)
         if (this.mode() === "timeshift" && !this.tsStarted) {
             this.tsStarted = true
+            // 服务器按 {begin}-{chosenAt} 跨度生成延迟直播流, 播放头恒等于 实时-跨度,
+            // 以载入时刻校准内容基准: 内容时刻 = contentBase + currentTime
+            const begin = getTimelineStart(this.props.timeline)
+            const parts = this.props.timeline.replace(/^ts-/, "").split("-")
+            const chosenAt = parseInt(parts[1], 10)
+            const span = (isNaN(chosenAt) ? Math.floor(Date.now() / 1000) : chosenAt) - begin
+            this.contentBase = Date.now() / 1000 - span
             if (video.currentTime > 10) {
                 try {
                     video.currentTime = 0
@@ -780,11 +817,11 @@ class Player extends React.Component {
             }
         }
 
-        // 回看时, 如果之前回看过该内容, 询问是否接着回看
+        // 回看时, 如果之前回看过该内容, 询问是否接着回看 (时移不询问)
         if (!this.resumeChecked) {
             this.resumeChecked = true
             const info = this.savedInfo
-            if (this.props.timeline && info &&
+            if (this.mode() === "review" && info &&
                 info.timeline === this.props.timeline && info.time > 0) {
                 this.setState({ isDialogOpen: true })
             }

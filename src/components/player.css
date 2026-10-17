@@ -192,6 +192,15 @@
     margin-right: 6px;
 }
 
+/* 直播/时移徽标后的时间: 直播=当前时间, 时移=当前播放的内容时刻 */
+.hp-live-clock {
+    margin-left: 8px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+    font-family: sans-serif;
+}
+
 /* 时移页"回到直播"按钮 */
 .hp-backlive {
     background: transparent;
