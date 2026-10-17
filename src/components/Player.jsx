@@ -15,6 +15,7 @@ import VolumeOffIcon from '@material-ui/icons/VolumeOff'
 import FullscreenIcon from '@material-ui/icons/Fullscreen'
 import FullscreenExitIcon from '@material-ui/icons/FullscreenExit'
 import Hls from 'hls.js'
+import config from "../../config/config"
 import "./player.css"
 
 // 方案B: 原生 <video> + hls.js, 单video元素由组件全程管理,
@@ -27,6 +28,11 @@ const THUMB_INTERVAL = 1
 const THUMB_START_INDEX = 1
 // 触屏拖动进度条时按此秒数取整取图, 减少移动网络请求量
 const THUMB_COARSE = 5
+// 直播 24 小时时移轴范围 (秒)
+const TIMESHIFT_WINDOW = 24 * 3600
+// 直播时移轴仅在有精确指针(鼠标)的电脑端启用
+const hasFinePointer = typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: fine)").matches
 
 const isPc = (() => {
     var userAgentInfo = navigator.userAgent
@@ -99,11 +105,12 @@ const fmt = (t) => {
 }
 
 // 回看 timeline 格式: "startTime-endTime" (Unix秒), 解析出节目开始的实际时间
+// 时移 timeline 格式: "ts-{startTime}", 同样解析出起点
 const getTimelineStart = (timeline) => {
     if (!timeline) {
         return 0
     }
-    const start = parseInt(timeline.split("-")[0], 10)
+    const start = parseInt(timeline.replace(/^ts-/, "").split("-")[0], 10)
     return isNaN(start) ? 0 : start
 }
 
@@ -115,6 +122,22 @@ const fmtClock = (unixSeconds) => {
     const d = new Date(unixSeconds * 1000)
     const pad = (n) => (n < 10 ? "0" + n : "" + n)
     return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds())
+}
+
+// 带日期的时钟时间: 同一天只显示 HH:mm:ss, 跨天显示 MM-dd HH:mm:ss
+const fmtClockDate = (unixSeconds) => {
+    if (!isFinite(unixSeconds) || unixSeconds <= 0) {
+        return null
+    }
+    const d = new Date(unixSeconds * 1000)
+    const now = new Date()
+    const pad = (n) => (n < 10 ? "0" + n : "" + n)
+    const clock = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds())
+    if (d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+        return clock
+    }
+    return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + clock
 }
 
 const FULLSCREEN_EVENTS = [
@@ -143,11 +166,26 @@ class Player extends React.Component {
     render() {
         const { classes } = this.props
         const s = this.state
-        const live = this.props.isLive
+        const mode = this.mode() // live / timeshift / review
         const hasDuration = s.duration > 0 && isFinite(s.duration)
-        const playedPct = hasDuration ? (s.currentTime / s.duration) * 100 : 0
-        const bufferedPct = hasDuration ? Math.min(100, (s.buffered / s.duration) * 100) : 0
+        // 回看进度条: 相对时长轴; 直播/时移共用直播式界面(24h 时移轴, 无进度显示)
+        let playedPct = 0
+        let bufferedPct = 0
+        if (mode === "review" && hasDuration) {
+            playedPct = (s.currentTime / s.duration) * 100
+            bufferedPct = Math.min(100, (s.buffered / s.duration) * 100)
+        }
         const volumePct = (s.muted ? 0 : s.volume) * 100
+        // 直播式时移轴仅在电脑端(有鼠标)显示; 时移播放即"延迟的直播", 界面与直播完全一致
+        const showLiveBar = (mode === "live" || mode === "timeshift") && hasFinePointer
+        // 时移页播放头位置: 时移起点 + 已播秒数 在 24h 轴上的百分比
+        let playheadPct = 0
+        if (mode === "timeshift") {
+            const shiftStart = getTimelineStart(this.props.timeline)
+            const axisStartTs = Date.now() / 1000 - TIMESHIFT_WINDOW
+            playheadPct = Math.min(100, Math.max(0,
+                ((shiftStart + s.currentTime - axisStartTs) / TIMESHIFT_WINDOW) * 100))
+        }
 
         return (
             <React.Fragment>
@@ -202,7 +240,7 @@ class Player extends React.Component {
                     ) : null}
 
                     <div className="hp-controls">
-                        {!live && hasDuration ? (
+                        {mode === "review" && hasDuration ? (
                             <div className="hp-progress" ref={this.barRef}
                                 onMouseDown={this.onBarMouseDown}
                                 onMouseMove={this.onBarMouseMove}
@@ -228,20 +266,58 @@ class Player extends React.Component {
                                 ) : null}
                             </div>
                         ) : null}
+                        {showLiveBar ? (
+                            <div className="hp-progress" ref={this.barRef}
+                                onMouseDown={this.onBarMouseDown}
+                                onMouseMove={this.onBarMouseMove}
+                                onMouseLeave={this.onBarMouseLeave}
+                            >
+                                <div className="hp-progress-inner">
+                                    {/* 直播页: 红点=直播边缘(轴最右端); 时移页: 红点=当前播放头(start+已播),
+                                        落后于轴右端(时间轴当前时间), 用户仍可点击轴上任意时刻切换时移点 */}
+                                    {mode === "timeshift" ? (
+                                        <div className="hp-live-edge" style={{
+                                            left: playheadPct + "%",
+                                            right: "auto"
+                                        }} />
+                                    ) : (
+                                        <div className="hp-live-edge" />
+                                    )}
+                                </div>
+                                {s.thumb ? (
+                                    <div className="hp-thumb" style={{ left: s.thumb.x + "px" }}>
+                                        {s.thumb.ok ? (
+                                            <div className="hp-thumb-img"
+                                                style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
+                                        ) : null}
+                                        <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
                         <div className="hp-buttons">
                             <IconButton className={classes.btn}
                                 onClick={this.togglePlay}
                                 aria-label={s.playing ? "暂停" : "播放"}>
                                 {s.playing ? <PauseIcon /> : <PlayArrowIcon />}
                             </IconButton>
-                            {live ? (
-                                <div className="hp-live">
-                                    <span className="hp-live-dot" />直播
-                                </div>
-                            ) : (
+                            {mode === "review" ? (
                                 <div className="hp-time">
                                     {this.fmtTime(s.currentTime)}{hasDuration ? " / " + this.fmtTime(s.duration) : ""}
                                 </div>
+                            ) : (
+                                <React.Fragment>
+                                    <div className="hp-live">
+                                        <span className="hp-live-dot" />{mode === "timeshift" ? "时移" : "直播"}
+                                    </div>
+                                    {/* 时移页提供一键回到直播(点击时移轴最右端也可以) */}
+                                    {mode === "timeshift" && this.props.onBackToLive ? (
+                                        <button type="button" className="hp-backlive"
+                                            onClick={this.props.onBackToLive}>
+                                            回到直播
+                                        </button>
+                                    ) : null}
+                                </React.Fragment>
                             )}
                             <div className="hp-spacer" />
                             {isPc ? (
@@ -339,7 +415,13 @@ class Player extends React.Component {
         this.touchedAt = 0
         this.retryNetwork = 0
         this.retryMedia = 0
+        // 多节目源自动切换: 连续失败计数(成功播放后归零) + 切换中标志(防重复跳源)
+        this.sourceFails = 0
+        this.switchingSource = false
         this.resumeChecked = false
+        this.tsStarted = false
+        // 时移/直播轴缩略图: 节目模板缓存 {节目startTime: 模板url|null}
+        this.videoTpls = {}
 
         this.closeDialog = this.closeDialog.bind(this)
         this.continuePlayProcess = this.continuePlayProcess.bind(this)
@@ -443,7 +525,7 @@ class Player extends React.Component {
             return
         }
         if (this.props.path === prevProps.path &&
-            this.props.isLive === prevProps.isLive) {
+            this.props.timeline === prevProps.timeline) {
             return
         }
 
@@ -457,7 +539,7 @@ class Player extends React.Component {
 
         clearInterval(this.timer)
 
-        // 如果是回看节目, 记录timeline
+        // 回看/时移节目, 定期记录播放进度
         if (this.props.timeline) {
             this.timer = setInterval(this.saveProgress, SAVE_INTERVAL)
         }
@@ -506,6 +588,9 @@ class Player extends React.Component {
         this.resumeChecked = false
         this.retryNetwork = 0
         this.retryMedia = 0
+        // 新的源已开始加载, 自动切源流程结束
+        this.switchingSource = false
+        this.tsStarted = false
         this.thumbCache = {}
         this.lastThumbSecond = -1
         this.thumbSeq++
@@ -528,11 +613,19 @@ class Player extends React.Component {
         const canNative = video.canPlayType("application/vnd.apple.mpegurl")
         // Safari/iOS 使用原生 HLS, 其它支持 MSE 的浏览器使用 hls.js
         if (Hls.isSupported() && !(canNative && isApple)) {
-            const hls = new Hls({
+            const hlsConf = {
                 xhrSetup: (xhr) => {
                     xhr.withCredentials = false
                 }
-            })
+            }
+            if (this.mode() === "timeshift") {
+                // 时移流是无 endlist 的直播型流: 默认会从直播边缘开播,
+                // startPosition=0 从 playlist 起点(时移开始时刻)开播;
+                // liveSyncDurationCount=10 追上直播边缘后仍从窗口前部跟随, 不跳丢
+                hlsConf.startPosition = 0
+                hlsConf.liveSyncDurationCount = 10
+            }
+            const hls = new Hls(hlsConf)
             this.hls = hls
             hls.loadSource(path)
             hls.attachMedia(video)
@@ -595,6 +688,23 @@ class Player extends React.Component {
         } catch (e) { }
     }
 
+    // 播放出错时请求切换到下一个节目源(由 PlayerPage 换源);
+    // 只有单一源或所有源都已轮询失败时返回 false, 由调用方显示错误界面
+    tryNextSource() {
+        // 已触发过切换但新源尚未加载(切换期间旧流的残留错误直接忽略)
+        if (this.switchingSource) {
+            return true
+        }
+        const count = this.props.sourceCount || 1
+        this.sourceFails++
+        if (count > 1 && this.sourceFails < count && this.props.onSourceError) {
+            this.switchingSource = true
+            this.props.onSourceError()
+            return true
+        }
+        return false
+    }
+
     onHlsError(ev, data) {
         if (!data || !data.fatal) {
             return
@@ -604,17 +714,28 @@ class Player extends React.Component {
             return
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            if (this.retryNetwork < 5) {
+            // 源清单(manifest)加载失败说明整个源不可用, startLoad 无法恢复,
+            // 直接自动切换到下一个节目源; 其他网络错误(分片/playlist)先重试
+            if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+                data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
+                if (this.tryNextSource()) {
+                    return
+                }
+            } else if (this.retryNetwork < 2) {
                 this.retryNetwork++
                 hls.startLoad()
                 return
             }
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            if (this.retryMedia < 3) {
+            if (this.retryMedia < 2) {
                 this.retryMedia++
                 hls.recoverMediaError()
                 return
             }
+        }
+        // 重试无效: 自动切换到下一个节目源, 所有源都失败后才显示错误界面
+        if (this.tryNextSource()) {
+            return
         }
         hls.destroy()
         this.hls = null
@@ -648,6 +769,16 @@ class Player extends React.Component {
         }
 
         this.applyRatio(this.props.ratio)
+
+        // 时移流: 原生 HLS(Safari)会从直播边缘开播, 回到流起点(时移开始时刻)
+        if (this.mode() === "timeshift" && !this.tsStarted) {
+            this.tsStarted = true
+            if (video.currentTime > 10) {
+                try {
+                    video.currentTime = 0
+                } catch (e) { }
+            }
+        }
 
         // 回看时, 如果之前回看过该内容, 询问是否接着回看
         if (!this.resumeChecked) {
@@ -705,6 +836,8 @@ class Player extends React.Component {
     }
 
     onPlaying() {
+        // 播放成功, 重置多源切换的连续失败计数
+        this.sourceFails = 0
         this.setState({ playing: true, loading: false })
     }
 
@@ -719,6 +852,10 @@ class Player extends React.Component {
         }
         const video = this.videoRef.current
         if (!video || !video.currentSrc) {
+            return
+        }
+        // 原生 HLS 播放失败: 同样自动切换到下一个节目源
+        if (this.tryNextSource()) {
             return
         }
         this.setState({
@@ -819,6 +956,8 @@ class Player extends React.Component {
     }
 
     retry() {
+        // 手动重试: 重新从当前源开始轮询
+        this.sourceFails = 0
         if (this.props.path) {
             this.setupVideo(this.props.path)
         }
@@ -840,7 +979,8 @@ class Player extends React.Component {
 
     seekRelative(delta) {
         const video = this.videoRef.current
-        if (!video || this.props.isLive) {
+        // 直播/时移(即"延迟的直播")没有固定时长, 不支持键盘相对 seek
+        if (!video || this.mode() !== "review") {
             return
         }
         const duration = this.state.duration
@@ -906,15 +1046,61 @@ class Player extends React.Component {
 
     // ------- 进度条与缩略图 -------
 
-    // 回看时显示节目实际播放时间(时钟), 直播/无时间线时显示相对时长
-    fmtTime(sec) {
-        const start = getTimelineStart(this.props.timeline)
-        if (start > 0 && isFinite(sec)) {
-            return fmtClock(start + sec) || fmt(sec)
+    // 播放模式: live 直播 / timeshift 时移(路由 ts-{start}, 即延迟的直播) / review 回看
+    mode() {
+        const tl = this.props.timeline || ""
+        if (tl.indexOf("ts-") === 0) {
+            return "timeshift"
         }
-        return fmt(sec)
+        return tl ? "review" : "live"
     }
 
+    // 回看时显示节目实际播放时间(时钟), 直播/时移轴显示带日期的绝对时钟, 无时间线时显示相对时长
+    fmtTime(value) {
+        const mode = this.mode()
+        if (mode === "timeshift" || mode === "live") {
+            // thumb.time 为绝对时间戳(秒)
+            return fmtClockDate(value) || ""
+        }
+        const start = getTimelineStart(this.props.timeline)
+        if (start > 0 && isFinite(value)) {
+            return fmtClock(start + value) || fmt(value)
+        }
+        return fmt(value)
+    }
+
+    // 计算鼠标/触点在进度条上的位置比例
+    barRatio(e) {
+        const bar = this.barRef.current
+        if (!bar) {
+            return null
+        }
+        let clientX = e.clientX
+        if (clientX === undefined) {
+            const t = (e.touches && e.touches[0]) ||
+                (e.changedTouches && e.changedTouches[0])
+            if (!t) {
+                return null
+            }
+            clientX = t.clientX
+        }
+        const rect = bar.getBoundingClientRect()
+        let ratio = (clientX - rect.left) / rect.width
+        if (ratio < 0) {
+            ratio = 0
+        }
+        if (ratio > 1) {
+            ratio = 1
+        }
+        return { ratio: ratio, clientX: clientX }
+    }
+
+    rectWidth(bar) {
+        const rect = bar.getBoundingClientRect()
+        return rect.width
+    }
+
+    // 回看模式: 事件位置 -> 直接 seek (按下即跳, 支持拖动)
     seekByEvent(e) {
         const bar = this.barRef.current
         const video = this.videoRef.current
@@ -925,21 +1111,79 @@ class Player extends React.Component {
         if (!duration || !isFinite(duration)) {
             return
         }
-        const rect = bar.getBoundingClientRect()
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX
-        let ratio = (clientX - rect.left) / rect.width
-        if (ratio < 0) {
-            ratio = 0
+        const pos = this.barRatio(e)
+        if (!pos) {
+            return
         }
-        if (ratio > 1) {
-            ratio = 1
+        video.currentTime = pos.ratio * duration
+        this.setState({ currentTime: pos.ratio * duration })
+    }
+
+    // 在节目单中查找时间戳所属的节目: videoList = [{date, list:[{startTime, endTime}]}]
+    findVideoAt(ts) {
+        const groups = this.props.videoList
+        if (!groups || !groups.length) {
+            return null
         }
-        video.currentTime = ratio * duration
-        this.setState({ currentTime: ratio * duration })
+        for (let i = 0; i < groups.length; i++) {
+            const list = groups[i].list || []
+            for (let j = 0; j < list.length; j++) {
+                if (ts >= list[j].startTime && ts < list[j].endTime) {
+                    return list[j]
+                }
+            }
+        }
+        return null
+    }
+
+    // 懒加载节目缩略图模板 (来自后端 sources/{channel}/{start}-{end} 接口)
+    fetchTemplate(video, cb) {
+        const key = video.startTime
+        if (this.videoTpls[key] !== undefined) {
+            cb(this.videoTpls[key])
+            return
+        }
+        const channel = this.props.channel
+        fetch(`${config.sources}/${channel}/${video.startTime}-${video.endTime}`)
+            .then((res) => res.json())
+            .then((data) => {
+                let tpl = null
+                if (data && data.sourceList && data.sourceList.length &&
+                    data.sourceList[0].thumbnails) {
+                    tpl = config.host + data.sourceList[0].thumbnails
+                }
+                this.videoTpls[key] = tpl
+                cb(tpl)
+            })
+            .catch(() => {
+                this.videoTpls[key] = null
+                cb(null)
+            })
+    }
+
+    // 事件位置 -> 直播式轴上的目标时间戳 ([当前-24h, 当前], 直播/时移页共用)
+    axisTsByEvent(e) {
+        const pos = this.barRatio(e)
+        if (!pos) {
+            return NaN
+        }
+        const nowTs = Date.now() / 1000
+        return nowTs - TIMESHIFT_WINDOW + pos.ratio * TIMESHIFT_WINDOW
     }
 
     onBarMouseDown(e) {
-        if (this.props.isLive || !this.state.duration) {
+        // 直播/时移页共用轴: 点击某时刻 -> 进入该时刻开始的时移播放
+        // (点击轴最右端即回到直播)
+        const mode = this.mode()
+        if (mode === "live" || mode === "timeshift") {
+            const ts = this.axisTsByEvent(e)
+            if (isFinite(ts) && this.props.onTimeshift) {
+                this.props.onTimeshift(Math.floor(ts))
+            }
+            return
+        }
+        // 回看: 按下即 seek 并支持拖动
+        if (!this.state.duration) {
             return
         }
         this.hideThumb()
@@ -963,7 +1207,7 @@ class Player extends React.Component {
     }
 
     onBarTouchStart(e) {
-        if (this.props.isLive || !this.state.duration) {
+        if (this.mode() !== "review" || !this.state.duration) {
             return
         }
         // 阻止页面滚动与合成鼠标事件, 拖动预览由 touch 事件完成
@@ -988,7 +1232,7 @@ class Player extends React.Component {
         // 松手: 跳转到预览位置(即拖动时显示的当前时间)
         const thumb = this.state.thumb
         const video = this.videoRef.current
-        if (thumb && isFinite(thumb.time) && video && !this.props.isLive) {
+        if (thumb && isFinite(thumb.time) && video) {
             video.currentTime = thumb.time
         }
         if (e && e.changedTouches && e.changedTouches[0]) {
@@ -1010,34 +1254,37 @@ class Player extends React.Component {
         this.hideThumb()
     }
 
+    // 统一入口: 根据 mode 计算悬停点对应的时间, 并加载该点的缩略图与时间显示
     updateThumb(e, coarse) {
         const bar = this.barRef.current
-        if (!bar || this.props.isLive || !this.props.thumbnails) {
+        if (!bar) {
+            return
+        }
+        const mode = this.mode()
+        const pos = this.barRatio(e)
+        if (!pos) {
+            return
+        }
+        if (mode === "live" || mode === "timeshift") {
+            // 直播/时移共用轴: 悬停点为绝对时间戳
+            const ts = Math.floor(this.axisTsByEvent({ clientX: pos.clientX }))
+            if (isFinite(ts)) {
+                this.loadThumb(ts, coarse, pos.clientX)
+            }
+            return
+        }
+        // 回看: 单节目模板 (thumb.time 为相对秒)
+        if (!this.props.thumbnails) {
             return
         }
         const duration = this.state.duration
         if (!duration || !isFinite(duration)) {
             return
         }
-        // 触屏 TouchEvent 没有 clientX, 取第一个触点
-        let clientX = e.clientX
-        if (clientX === undefined) {
-            const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
-            if (!t) {
-                return
-            }
-            clientX = t.clientX
-        }
-        const rect = bar.getBoundingClientRect()
-        let ratio = (clientX - rect.left) / rect.width
-        if (ratio < 0) {
-            ratio = 0
-        }
-        if (ratio > 1) {
-            ratio = 1
-        }
-        const seconds = Math.floor(ratio * duration)
-        const x = Math.min(Math.max(ratio * rect.width, 84), Math.max(84, rect.width - 84))
+        const seconds = Math.floor(pos.ratio * duration)
+        const barW = this.rectWidth(bar)
+        const x = Math.min(Math.max(pos.ratio * barW, 84),
+            Math.max(84, barW - 84))
 
         // 触屏拖动按 THUMB_COARSE 秒粒度取图(减少请求量), 时间仍显示精确秒
         const cacheKey = coarse
@@ -1061,6 +1308,69 @@ class Player extends React.Component {
         const url = this.props.thumbnails
             .replace("{time}", cacheKey / THUMB_INTERVAL + THUMB_START_INDEX)
         setThumb(null, false) // 立即显示时间, 图片加载成功后再显示
+        const img = new Image()
+        img.onload = () => {
+            this.thumbCache[cacheKey] = url
+            if (seq === this.thumbSeq) {
+                setThumb(url, true)
+            }
+        }
+        img.onerror = () => {
+            this.thumbCache[cacheKey] = null
+            if (seq === this.thumbSeq) {
+                setThumb(null, false)
+            }
+        }
+        img.src = url
+    }
+
+    // 直播/时移轴的缩略图: 悬停时间戳 -> 节目单查表 -> 懒加载该节目模板 -> 取图 (thumb.time 为绝对时间戳)
+    loadThumb(ts, coarse, clientX) {
+        const bar = this.barRef.current
+        if (!bar) {
+            return
+        }
+        const rect = bar.getBoundingClientRect()
+        const x = Math.min(Math.max(((clientX - rect.left) / rect.width) * rect.width, 84),
+            Math.max(84, rect.width - 84))
+        const cacheKey = coarse ? Math.floor(ts / THUMB_COARSE) * THUMB_COARSE : ts
+
+        const setThumb = (url, ok) => {
+            this.setState({ thumb: { url: url, x: x, time: ts, ok: ok } })
+        }
+
+        const cached = this.thumbCache[cacheKey]
+        if (cached !== undefined) {
+            setThumb(cached, cached !== null)
+            return
+        }
+        const video = this.findVideoAt(ts)
+        if (!video) {
+            // 节目单未加载或该点无节目覆盖: 只显示时间
+            // (不缓存, 节目单加载完成后同点悬停可重新查表)
+            setThumb(null, false)
+            return
+        }
+        const tpl = this.videoTpls[video.startTime]
+        if (tpl === undefined) {
+            setThumb(null, false) // 先显示时间, 模板加载后重取
+            this.fetchTemplate(video, () => {
+                // 模板到位后若仍悬停在原时间点, 重新加载该点缩略图
+                if (this.state.thumb && this.state.thumb.time === ts) {
+                    this.loadThumb(ts, coarse, clientX)
+                }
+            })
+            return
+        }
+        if (tpl === null) {
+            this.thumbCache[cacheKey] = null
+            setThumb(null, false)
+            return
+        }
+        const seq = ++this.thumbSeq
+        const url = tpl
+            .replace("{time}", (cacheKey - video.startTime) / THUMB_INTERVAL + THUMB_START_INDEX)
+        setThumb(null, false)
         const img = new Image()
         img.onload = () => {
             this.thumbCache[cacheKey] = url

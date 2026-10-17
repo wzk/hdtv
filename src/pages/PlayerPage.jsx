@@ -86,12 +86,16 @@ class PlayerPage extends React.Component {
                 <MuiThemeProvider theme={theme}>
                     <Player path={this.state.currentSourcePath}
                         title={this.state.title}
-                        isLive={!Boolean(this.state.timeline)}
                         thumbnails={this.state.currentSourceThumbnails}
                         channel={this.state.channel}
                         timeline={this.state.timeline}
+                        videoList={this.state.videoList}
                         ratio={this.state.ratio}
+                        sourceCount={this.state.sourceList ? this.state.sourceList.length : 1}
                         onPlayEnd={this.openDialog}
+                        onTimeshift={this.handleTimeshift}
+                        onBackToLive={this.handleBackToLive}
+                        onSourceError={this.handleSourceError}
                     />
                     <ColorSnackbar />
                     <Dialog
@@ -141,42 +145,22 @@ class PlayerPage extends React.Component {
             isSnackbarOpen: false
         }
         console.log(props)
+        this.slug = "" // 直播流文件名, 时移地址需要 (如 fhzx)
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)
         this.playNextVideo = this.playNextVideo.bind(this)
         this.openDialog = this.openDialog.bind(this)
         this.closeDialog = this.closeDialog.bind(this)
+        this.handleTimeshift = this.handleTimeshift.bind(this)
+        this.handleBackToLive = this.handleBackToLive.bind(this)
+        this.handleSourceError = this.handleSourceError.bind(this)
     }
 
     componentDidMount() {
-        let channel = this.props.match.params.channel,
-            timeline = this.props.match.params.timeline,
-            savedInfo = JSON.parse(localStorage.getItem(channel)),
-            index = 0
+        const channel = this.props.match.params.channel,
+            timeline = this.props.match.params.timeline
 
-        if (savedInfo) {
-            if (savedInfo.index) {
-                index = savedInfo.index
-            }
-        }
-
-        // 获取视频源
-        fetch(`${config.sources}/${channel}/${timeline || ""}`).then((res) => {
-            res.json().then((data) => {
-                // console.log(data)
-                index = index < data.sourceList.length ? index : 0
-                this.setState({
-                    title: data.title,
-                    sourceList: data.sourceList,
-                    currentSourceName: data.sourceList[index].name,
-                    currentSourcePath: data.sourceList[index].path,
-                    timeline,
-                    channel,
-                    currentSourceThumbnails:
-                        config.host + data.sourceList[index].thumbnails
-                })
-            })
-        })
+        this.loadSource(channel, timeline)
 
         // 获取节目列表
         this.getVideoList()
@@ -201,36 +185,124 @@ class PlayerPage extends React.Component {
             return
         }
 
-        this.getVideoList()
-
-        // 从存储中获得播放源的index
-        let savedInfo = JSON.parse(localStorage.getItem(channel)),
-            index = 0
-        if (savedInfo) {
-            if (savedInfo.index) {
-                index = savedInfo.index
-            }
+        // 同频道内时移起点变化(ts-A -> ts-B): 无需重新请求直播源, 直接重建时移地址
+        if (channel === prevChannel && this.isTimeshift(timeline) &&
+            this.isTimeshift(prevTimeline) && this.slug) {
+            this.applyTimeshiftSource(timeline)
+        } else {
+            this.loadSource(channel, timeline)
         }
-        fetch(`${config.sources}/${channel}/${timeline || ""}`).then((res) => {
-            res.json().then((data) => {
-                // console.log(data)
-                index = index < data.sourceList.length ? index : 0
-                this.setState({
-                    title: data.title,
-                    sourceList: data.sourceList,
-                    currentSourceName: data.sourceList[index].name,
-                    currentSourcePath: data.sourceList[index].path,
-                    timeline,
-                    channel,
-                    currentSourceThumbnails:
-                        config.host + data.sourceList[index].thumbnails
-                })
-            })
-        })
+
+        this.getVideoList()
 
         // 存储state
         if (this.state.ratio !== prevState.ratio) {
             localStorage.setItem("ratio", this.state.ratio)
+        }
+    }
+
+    // timeline 是否为时移路由: "ts-{startTime}"
+    isTimeshift(timeline) {
+        return Boolean(timeline && timeline.indexOf("ts-") === 0)
+    }
+
+    // 时移播放地址: {timeshiftHost}/review/{start}-{now}-{节目名}.m3u8
+    buildShiftUrl(tsStart) {
+        return config.timeshiftHost + "/review/" + tsStart + "-" +
+            Math.floor(Date.now() / 1000) + "-" + this.slug + ".m3u8"
+    }
+
+    // 用当前 slug 生成时移源并应用
+    applyTimeshiftSource(timeline) {
+        const tsStart = parseInt(timeline.slice(3), 10)
+        if (isNaN(tsStart) || !this.slug) {
+            return
+        }
+        this.setState({
+            currentSourcePath: this.buildShiftUrl(tsStart),
+            currentSourceThumbnails: "",
+            // 同步更新 timeline, 播放头位置/进度保存等依赖时移起点
+            timeline
+        })
+    }
+
+    // 加载频道播放源: 直播/回看走后端接口, 时移(ts-)基于直播源信息生成时移地址
+    loadSource(channel, timeline) {
+        const isTs = this.isTimeshift(timeline)
+        // 时移路由下按直播源请求 (空 timeline), 否则按回看 timeline 请求
+        fetch(`${config.sources}/${channel}/${isTs ? "" : (timeline || "")}`)
+            .then((res) => {
+                res.json().then((data) => {
+                    let index = 0
+                    const savedInfo = JSON.parse(localStorage.getItem(channel))
+                    if (savedInfo && savedInfo.index) {
+                        index = savedInfo.index
+                    }
+                    index = index < data.sourceList.length ? index : 0
+                    const source = data.sourceList[index]
+                    // 从直播流地址提取节目名 (如 .../fhzx.m3u8 -> fhzx)
+                    const m = /\.m3u8$/.test(source.path)
+                        ? source.path.replace(/.*\//, "").replace(/\.m3u8$/, "")
+                        : ""
+                    if (m) {
+                        this.slug = m
+                    }
+                    this.setState({
+                        title: data.title,
+                        sourceList: data.sourceList,
+                        currentSourceName: source.name,
+                        currentSourcePath: isTs && m
+                            ? this.buildShiftUrl(parseInt(timeline.slice(3), 10))
+                            : source.path,
+                        currentSourceIndex: index,
+                        timeline,
+                        channel,
+                        currentSourceThumbnails:
+                            isTs ? "" : config.host + source.thumbnails
+                    })
+                })
+            })
+    }
+
+    // 直播页点击 24 小时时移轴 -> 进入该时刻开始的时移播放 (点轴最右端即回到直播)
+    handleTimeshift(tsStart) {
+        const channel = this.props.match.params.channel
+        this.props.history.push(`/${config.version}/player/${channel}/ts-${tsStart}`)
+    }
+
+    // 时移页"回到直播"按钮
+    handleBackToLive() {
+        const channel = this.props.match.params.channel
+        this.props.history.push(`/${config.version}/player/${channel}/`)
+    }
+
+    // 播放出错时自动切换到下一个节目源 (循环); 播放器会在所有源都失败后才显示错误界面
+    handleSourceError() {
+        const list = this.state.sourceList
+        if (!list || list.length < 2) {
+            return
+        }
+        const timeline = this.state.timeline || ""
+        const isTs = this.isTimeshift(timeline)
+        const nextIndex = ((this.state.currentSourceIndex || 0) + 1) % list.length
+        const source = list[nextIndex]
+        // 不同源的流文件名可能不同, 时移地址需要用新源的节目名重建
+        const m = /\.m3u8$/.test(source.path)
+            ? source.path.replace(/.*\//, "").replace(/\.m3u8$/, "")
+            : ""
+        if (m) {
+            this.slug = m
+        }
+        if (isTs && m) {
+            this.setState({
+                currentSourceIndex: nextIndex,
+                currentSourceName: source.name,
+                currentSourcePath: this.buildShiftUrl(parseInt(timeline.slice(3), 10)),
+                currentSourceThumbnails: ""
+            })
+        } else {
+            this.setSource(source.name, source.path,
+                config.host + source.thumbnails, nextIndex)
         }
     }
 
@@ -240,8 +312,9 @@ class PlayerPage extends React.Component {
             document.exitFullscreen()
         }
 
-        // 是回放的节目播放完毕
-        if (this.state.timeline && this.state.timeline.includes("-")) {
+        // 是回放的节目播放完毕 (时移路由 ts- 不参与连播逻辑)
+        if (this.state.timeline && this.state.timeline.indexOf("ts-") !== 0 &&
+            this.state.timeline.includes("-")) {
             const timeline = this.state.timeline.split("-")
             const endTime = timeline[1]
             const videoListInOrder = this.state.videoList.slice().reverse()
@@ -297,11 +370,9 @@ class PlayerPage extends React.Component {
     }
 
     playNextVideo() {
-        console.log("here")
-        // 是回放的节目播放完毕
-        console.log(this.state.timeline)
-        console.log(this.state.channel)
-        if (this.state.timeline && this.state.timeline.includes("-")) {
+        // 是回放的节目播放完毕 (时移路由 ts- 不参与连播逻辑)
+        if (this.state.timeline && this.state.timeline.indexOf("ts-") !== 0 &&
+            this.state.timeline.includes("-")) {
             const timeline = this.state.timeline.split("-")
             const endTime = timeline[1]
             const videoListInOrder = this.state.videoList.slice().reverse()
