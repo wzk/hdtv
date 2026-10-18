@@ -137,8 +137,8 @@ class PlayerPage extends React.Component {
         if (ratio) {
             this.setState({ ratio })
         } else {
-            this.setState({ ratio: "自动" })
-            localStorage.setItem("ratio", "自动")
+            this.setState({ ratio: "16:9" })
+            localStorage.setItem("ratio", "16:9")
         }
     }
 
