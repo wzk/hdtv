@@ -6,12 +6,12 @@ import CardMedia from '@material-ui/core/CardMedia'
 import Grid from '@material-ui/core/Grid'
 import PeopleIcon from "@material-ui/icons/People"
 import grey from "@material-ui/core/colors/grey"
-import Collapse from '@material-ui/core/Collapse'
 import { Transition } from 'react-transition-group'
 import config from "../../config/config"
 import { Link } from 'react-router-dom'
 
-const styles = {
+// 图片模式: 卡片网格; 文字模式: 紧凑三列行列表(频道/正在播出/观看人数)
+const styles = (theme) => ({
     root: {
         cursor: "pointer"
     },
@@ -62,28 +62,97 @@ const styles = {
         "&:hover": {
             boxShadow: "0 3px 8px 8px rgba(0, 0, 0, 0.2)"
         }
+    },
+    // ------- 文字模式(纯节目信息): 白底圆角面板 + 自适应多列行网格 -------
+    // rowsGrid 用 1px gap 露出背景色形成网格线, 列数随宽度自动变化(宽屏2~3列, 窄屏1列)
+    textList: {
+        backgroundColor: theme.palette.background.paper,
+        borderRadius: "8px",
+        boxShadow: theme.shadows[2],
+        overflow: "hidden"
+    },
+    rowsGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
+        gap: "1px",
+        backgroundColor: theme.palette.divider
+    },
+    row: {
+        display: "flex",
+        alignItems: "center",
+        padding: "10px 16px",
+        backgroundColor: theme.palette.background.paper,
+        cursor: "pointer",
+        textDecoration: "none",
+        "&:hover": {
+            backgroundColor: "rgba(25, 118, 210, 0.06)",
+            textDecoration: "none"
+        }
+    },
+    rowName: {
+        flex: "0 0 auto",
+        width: "150px",
+        fontWeight: 500,
+        fontSize: "14px",
+        color: grey[800],
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+    },
+    rowTitle: {
+        flex: "1 1 auto",
+        minWidth: "0",
+        marginLeft: "12px",
+        fontSize: "14px",
+        color: grey[600],
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+    },
+    rowNum: {
+        flex: "0 0 auto",
+        minWidth: "64px",
+        marginLeft: "12px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        fontSize: "13px",
+        color: grey[500],
+        whiteSpace: "nowrap"
     }
-}
+})
 
 const ChannelItem = (props) => {
     const { classes } = props
+    const isText = props.isHidePicture
     // console.log("ChannelItem render")
     return (
         <Transition in={props.isShow} unmountOnExit timeout={300}>
-            {(state) => (
+            {(state) => (isText ? (
+                <Link to={`/${config.version}/player/${props.channelId}`}
+                    className={`${classes.row} ${classes.default} ${classes[state]}`}>
+                    <span className={classes.rowName}>
+                        {props.name}
+                    </span>
+                    <span className={classes.rowTitle}>
+                        {props.title}
+                    </span>
+                    <span className={classes.rowNum}>
+                        <PeopleIcon classes={{ root: classes.icon }} />
+                        <span>{props.viewerNum ? props.viewerNum : 0}</span>
+                    </span>
+                </Link>
+            ) : (
                 <Grid item xs={12} sm={6} md={4} lg={3}
                     classes={{ item: `${classes.default} ${classes[state]}` }}>
                     <Link to={`/${config.version}/player/${props.channelId}`}>
                         <div className={classes.channelListWrapper}>
                             <Card classes={{ root: classes.root }}>
-                                <Collapse in={!props.isHidePicture} timeout="auto"
-                                    unmountOnExit>
-                                    <CardMedia
-                                        className={classes.media}
-                                        image={`${config.host}${props.imageSrc}?${props.cacheNum}`}
-                                        title={props.name ? props.name : "正在加载"}
-                                    />
-                                </Collapse>
+                                <CardMedia
+                                    className={classes.media}
+                                    image={`${config.host}${props.imageSrc}?${props.cacheNum}`}
+                                    title={props.name ? props.name : "正在加载"}
+                                />
                                 <CardContent classes={{ root: classes.content }}>
                                     <div className={classes.firstLineWrapper}>
                                         <div>{props.name}</div>
@@ -97,7 +166,8 @@ const ChannelItem = (props) => {
                             </Card>
                         </div>
                     </Link>
-                </Grid>)}
+                </Grid>
+            ))}
         </Transition>
     )
 }
@@ -110,22 +180,40 @@ class ChannelList extends React.Component {
         // console.log(this.props.filter)
         return (
             <div>
-                <Grid container spacing={isHidePicture ? 0 : 24}>
-                    {this.props.channelList.map((channel) => (
-                        <ChannelItemWidthStyles key={channel.channelId}
-                            isHidePicture={isHidePicture}
-                            name={channel.name} title={channel.title}
-                            cacheNum={this.props.cacheNum}
-                            channelId={channel.channelId}
-                            viewerNum={channel.viewerNum}
-                            imageSrc={channel.snapshotUrl}
-                            isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
-                                toLowerCase().includes(this.props.filter)} />
-                    ))}
-                </Grid>
+                {isHidePicture ? (
+                    <div className={this.props.classes.textList}>
+                        <div className={this.props.classes.rowsGrid}>
+                            {this.props.channelList.map((channel) => (
+                                <ChannelItemWidthStyles key={channel.channelId}
+                                    isHidePicture={isHidePicture}
+                                    name={channel.name} title={channel.title}
+                                    cacheNum={this.props.cacheNum}
+                                    channelId={channel.channelId}
+                                    viewerNum={channel.viewerNum}
+                                    imageSrc={channel.snapshotUrl}
+                                    isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
+                                        toLowerCase().includes(this.props.filter)} />
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <Grid container spacing={24}>
+                        {this.props.channelList.map((channel) => (
+                            <ChannelItemWidthStyles key={channel.channelId}
+                                isHidePicture={isHidePicture}
+                                name={channel.name} title={channel.title}
+                                cacheNum={this.props.cacheNum}
+                                channelId={channel.channelId}
+                                viewerNum={channel.viewerNum}
+                                imageSrc={channel.snapshotUrl}
+                                isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
+                                    toLowerCase().includes(this.props.filter)} />
+                        ))}
+                    </Grid>
+                )}
             </div>
         )
     }
 }
 
-export default ChannelList
+export default withStyles(styles)(ChannelList)
