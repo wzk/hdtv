@@ -7,13 +7,6 @@ import { Link } from "react-router-dom"
 import Tooltip from '@material-ui/core/Tooltip'
 import IconButton from '@material-ui/core/IconButton'
 import blue from "@material-ui/core/colors/blue"
-import Button from '@material-ui/core/Button'
-import Dialog from '@material-ui/core/Dialog'
-import DialogActions from '@material-ui/core/DialogActions'
-import DialogContent from '@material-ui/core/DialogContent'
-import DialogContentText from '@material-ui/core/DialogContentText'
-import DialogTitle from '@material-ui/core/DialogTitle'
-import Slide from '@material-ui/core/Slide'
 import HomeIcon from "@material-ui/icons/Home"
 import Player from "../components/Player.jsx"
 import VideoListButton from "../components/VideoListButton.jsx"
@@ -77,6 +70,7 @@ class PlayerPage extends React.Component {
                         <FavoriteButton channel={match.params.channel} />
                         <VideoListButton color="inherit"
                             channel={match.params.channel}
+                            title={this.state.title}
                             timeline={this.state.timeline}
                             videoList={this.state.videoList} />
                         <RatioButton ratio={this.state.ratio}
@@ -92,37 +86,12 @@ class PlayerPage extends React.Component {
                         videoList={this.state.videoList}
                         ratio={this.state.ratio}
                         sourceCount={this.state.sourceList ? this.state.sourceList.length : 1}
-                        onPlayEnd={this.openDialog}
+                        onPlayEnd={this.handlePlayEnd}
                         onTimeshift={this.handleTimeshift}
                         onBackToLive={this.handleBackToLive}
                         onSourceError={this.handleSourceError}
                     />
                     <ColorSnackbar />
-                    <Dialog
-                        open={this.state.isDialogOpen}
-                        TransitionComponent={Slide}
-                        keepMounted
-                        onClose={this.closeDialog}
-                        aria-labelledby="alert-dialog-slide-title"
-                        aria-describedby="alert-dialog-slide-description"
-                    >
-                        <DialogTitle id="alert-dialog-slide-title">
-                            {"是否播放下一个节目?"}
-                        </DialogTitle>
-                        <DialogContent>
-                            <DialogContentText id="alert-dialog-slide-description">
-                                当前视频已经播放完毕.
-                        </DialogContentText>
-                        </DialogContent>
-                        <DialogActions>
-                            <Button onClick={this.closeDialog} color="default">
-                                取消
-                        </Button>
-                            <Button onClick={this.playNextVideo} color="primary">
-                                播放
-                        </Button>
-                        </DialogActions>
-                    </Dialog>
                 </MuiThemeProvider>
             </div>
         )
@@ -141,7 +110,6 @@ class PlayerPage extends React.Component {
             channel: "",
             ratio: "",
             videoList: [],
-            isDialogOpen: false,
             isSnackbarOpen: false
         }
         console.log(props)
@@ -149,8 +117,7 @@ class PlayerPage extends React.Component {
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)
         this.playNextVideo = this.playNextVideo.bind(this)
-        this.openDialog = this.openDialog.bind(this)
-        this.closeDialog = this.closeDialog.bind(this)
+        this.handlePlayEnd = this.handlePlayEnd.bind(this)
         this.handleTimeshift = this.handleTimeshift.bind(this)
         this.handleBackToLive = this.handleBackToLive.bind(this)
         this.handleSourceError = this.handleSourceError.bind(this)
@@ -307,11 +274,15 @@ class PlayerPage extends React.Component {
             config.host + source.thumbnails, nextIndex)
     }
 
-    openDialog() {
-        // 播放结束退出全屏 (老浏览器可能没有该 API)
-        if (document.exitFullscreen) {
-            document.exitFullscreen()
-        }
+    // 回看播放结束: 自动连播下一个已播出的节目, 不弹确认框
+    handlePlayEnd() {
+        // 播放结束退出全屏 (非全屏状态调用可能抛同步错误或 reject promise)
+        try {
+            const r = document.exitFullscreen && document.exitFullscreen()
+            if (r && r.catch) {
+                r.catch(() => { })
+            }
+        } catch (e) { }
 
         // 是回放的节目播放完毕 (时移路由 ts- 不参与连播逻辑)
         if (this.state.timeline && !this.isTimeshift(this.state.timeline)) {
@@ -336,20 +307,12 @@ class PlayerPage extends React.Component {
                                 return
                             }
                         }
-                        this.setState({
-                            isDialogOpen: true
-                        })
+                        this.playNextVideo()
                         return
                     }
                 }
             }
         }
-    }
-
-    closeDialog() {
-        this.setState({
-            isDialogOpen: false
-        })
     }
 
     // 设置选择的节目源并存储
@@ -422,7 +385,6 @@ class PlayerPage extends React.Component {
                                 )
                             }
                         }
-                        this.closeDialog()
                         return
                     }
                 }
