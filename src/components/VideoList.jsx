@@ -123,7 +123,7 @@ const fmtTime = (unix) => {
 }
 
 const VideoList = (props) => {
-    const { classes, list, now, currentStartTime } = props
+    const { classes, list, now, currentStartTime, timeshift } = props
     // 按 12 点分成上午/下午两组
     const morning = []
     const afternoon = []
@@ -141,9 +141,10 @@ const VideoList = (props) => {
         const time = fmtTime(videoInfo.startTime)
         const isLast = index === group.length - 1
         const rowClass = isLast ? classes.rowLast : classes.row
-        // 回看模式: 精确定位当前节目
-        const isCurrent = currentStartTime &&
-            String(currentStartTime) === String(videoInfo.startTime)
+        // 回看/时移定位: 当前播放内容时刻落在该节目区间内 (回看=节目start, 时移=播放头)
+        const cur = currentStartTime ? Number(currentStartTime) : 0
+        const isCurrent = cur > 0 &&
+            videoInfo.startTime <= cur && cur < videoInfo.endTime
         // 正在播出: 按当前时间判断(回看模式下同样生效)
         const isLive = now >= videoInfo.startTime && now < videoInfo.endTime
         if (now > videoInfo.endTime) {
@@ -163,27 +164,35 @@ const VideoList = (props) => {
                         <ListItemText disableTypography
                             primary={videoInfo.title}
                             className={isCurrent ? classes.namePlaying : classes.name} />
-                        {isCurrent ? <span className={classes.currentTag}>正在回看</span> : null}
+                        {isCurrent
+                            ? <span className={classes.currentTag}>
+                                {timeshift ? "时移" : "回看"}
+                            </span> : null}
                     </ListItem>
                 </Link>
             )
         }
-        if (isLive || isCurrent) {
-            // 正在播出(红点+红标签) / 回看定位节目(蓝点+蓝标签), 浅蓝底凸显
-            // hp-vl-current 供面板打开后自动滚动定位
+        if (isCurrent || isLive) {
+            // 回看/时移定位节目(蓝点+蓝标签, 优先) / 正在播出(红点+红标签), 浅蓝底凸显
+            // 该节目正在直播, 点击进入直播页; hp-vl-current 供面板打开后自动滚动定位
             return (
-                <ListItem key={`${props.channel}-${videoInfo.startTime}`}
-                    divider={false}
-                    className={classes.rowPlaying + " hp-vl-current"}>
-                    <span className={classes.timePlaying}>{time}</span>
-                    <span className={isLive ? classes.dot : classes.dotCurrent} />
-                    <ListItemText disableTypography
-                        primary={videoInfo.title}
-                        className={classes.namePlaying} />
-                    {isLive
-                        ? <span className={classes.liveTag}>正在播出</span>
-                        : <span className={classes.currentTag}>正在回看</span>}
-                </ListItem>
+                <Link to={`/${config.version}/player/${props.channel}/`}
+                    key={`${props.channel}-${videoInfo.startTime}`}
+                    onClick={props.onVideoClick}>
+                    <ListItem divider={false}
+                        className={classes.rowPlaying + " hp-vl-current"}>
+                        <span className={classes.timePlaying}>{time}</span>
+                        <span className={isCurrent ? classes.dotCurrent : classes.dot} />
+                        <ListItemText disableTypography
+                            primary={videoInfo.title}
+                            className={classes.namePlaying} />
+                        {isCurrent
+                            ? <span className={classes.currentTag}>
+                                {timeshift ? "时移" : "回看"}
+                            </span>
+                            : <span className={classes.liveTag}>直播</span>}
+                    </ListItem>
+                </Link>
             )
         }
         // 未播出: 浅灰不可点

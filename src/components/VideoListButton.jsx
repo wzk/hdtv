@@ -65,8 +65,9 @@ const styles = (theme) => Object.assign({}, panelStyles(theme), {
 class VideoListButton extends React.Component {
     render() {
         const { classes, timeline, videoList, title } = this.props
-        // 回看模式定位当前节目: timeline 为 "start-end"; 时移(ts-)与直播不定位
+        // 回看/时移模式定位当前播放内容所在节目; 直播不定位
         const currentStartTime = this.currentStart()
+        const isTs = Boolean(timeline && timeline.indexOf("ts-") === 0)
         const day = videoList[this.state.activeIndex]
         return (
             <div>
@@ -99,6 +100,7 @@ class VideoListButton extends React.Component {
                                         <VideoList list={day.list}
                                             now={this.state.now}
                                             currentStartTime={currentStartTime}
+                                            timeshift={isTs}
                                             channel={this.props.channel}
                                             onVideoClick={this.closeList} />
                                     </List>
@@ -127,10 +129,25 @@ class VideoListButton extends React.Component {
         this.scrollToCurrent = this.scrollToCurrent.bind(this)
     }
 
-    // 回看模式返回当前节目开始时间, 其他模式返回 ""
+    // 返回"当前播放内容时刻"(秒): 用于节目单凸显与日期定位
+    // 回看: timeline "start-end" 的 start (即节目开始时刻)
+    // 时移: ts-{begin}-{chosenAt} 的 begin + 已播秒数(播放头会跨节目推进)
     currentStart() {
         const { timeline } = this.props
-        if (timeline && timeline.indexOf("ts-") !== 0 && timeline.includes("-")) {
+        if (!timeline) {
+            return ""
+        }
+        if (timeline.indexOf("ts-") === 0) {
+            const begin = parseInt(timeline.slice(3).split("-")[0], 10)
+            if (isNaN(begin)) {
+                return ""
+            }
+            const video = document.querySelector("#playerContainer video")
+            const played = video && isFinite(video.currentTime)
+                ? Math.floor(video.currentTime) : 0
+            return String(begin + played)
+        }
+        if (timeline.includes("-")) {
             return timeline.split("-")[0]
         }
         return ""
@@ -157,12 +174,13 @@ class VideoListButton extends React.Component {
         this.setState({ isListShow: false })
     }
     toggleList() {
-        // 每次打开默认定位到今天; 回看模式自动切到当前节目所在日期
+        // 每次打开默认定位到今天; 回看/时移模式自动切到当前播放内容所在日期
         let activeIndex = 0
         const currentStartTime = this.currentStart()
         if (currentStartTime) {
+            const cur = Number(currentStartTime)
             const idx = this.props.videoList.findIndex((day) =>
-                day.list.some((v) => String(v.startTime) === String(currentStartTime)))
+                day.list.some((v) => cur >= v.startTime && cur < v.endTime))
             if (idx > -1) {
                 activeIndex = idx
             }

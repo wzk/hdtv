@@ -560,7 +560,11 @@ class Player extends React.Component {
             this.savedInfo = {}
         }
 
-        this.setupVideo(this.props.path)
+        // 只有同一节目内换源(手动/自动)才记住播放点续播;
+        // 跨节目切换(timeline 变)一律从头播, 否则会把上一个节目的播放头
+        // 误 seek 到新节目上(超出时长还会立即触发连播跳回)
+        const sameTimeline = this.props.timeline === prevProps.timeline
+        this.setupVideo(this.props.path, sameTimeline)
 
         clearInterval(this.timer)
 
@@ -606,10 +610,16 @@ class Player extends React.Component {
 
     // ------- 播放核心 -------
 
-    setupVideo(path) {
+    setupVideo(path, resume) {
         const video = this.videoRef.current
         if (!video) {
             return
+        }
+        // 回看切源: 记住当前播放点, 新源就绪后无缝续播(不弹续播询问);
+        // 直播无进度概念, 时移由服务器按时间对定位, 跨节目切换(resume=false)从头播
+        this.pendingSeek = 0
+        if (resume && this.mode() === "review" && video.currentTime > 1) {
+            this.pendingSeek = video.currentTime
         }
         this.resumeChecked = false
         this.retryNetwork = 0
@@ -817,8 +827,14 @@ class Player extends React.Component {
             }
         }
 
-        // 回看时, 如果之前回看过该内容, 询问是否接着回看 (时移不询问)
-        if (!this.resumeChecked) {
+        // 回看切源: 有待续播的播放点, 直接 seek 接着播, 不弹续播询问
+        if (this.mode() === "review" && this.pendingSeek > 0) {
+            try {
+                video.currentTime = this.pendingSeek
+            } catch (e) { }
+            this.pendingSeek = 0
+            this.resumeChecked = true
+        } else if (!this.resumeChecked) {
             this.resumeChecked = true
             const info = this.savedInfo
             if (this.mode() === "review" && info &&
@@ -863,9 +879,25 @@ class Player extends React.Component {
 
     onEnded() {
         this.setState({ playing: false })
+        // 播完停止进度保存并清除该节目的播放点:
+        // 否则下次回看该节目会定位到结尾, 立即又触发连播
+        clearInterval(this.timer)
+        this.clearSavedProgress()
         if (this.props.onPlayEnd) {
             this.props.onPlayEnd()
         }
+    }
+
+    // 清除当前频道保存的播放进度(只删 time/timeline, 保留默认源 index 等字段)
+    clearSavedProgress() {
+        try {
+            const info = JSON.parse(localStorage.getItem(this.props.channel))
+            if (info) {
+                delete info.time
+                delete info.timeline
+                localStorage.setItem(this.props.channel, JSON.stringify(info))
+            }
+        } catch (e) { }
     }
 
     onWaiting() {

@@ -45,7 +45,7 @@ class SourceButton extends React.Component {
                     unmountOnExit>
                     <div className={classes.list}>
                         <ClickAwayListener onClickAway={this.closeList}>
-                            <div className={classes.panel}>
+                            <div className={classes.panel} id="hp-src-panel">
                                 <div className={classes.panelHead}>选择节目源</div>
                                 {
                                     this.props.sourceList.map((source, index) => {
