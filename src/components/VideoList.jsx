@@ -61,25 +61,11 @@ const styles = (theme) => ({
         borderRadius: "50%",
         backgroundColor: red[500]
     },
-    dotCurrent: {
-        flex: "0 0 auto",
-        width: "6px",
-        height: "6px",
-        marginRight: "6px",
-        borderRadius: "50%",
-        backgroundColor: blue[500]
-    },
     liveTag: {
         flex: "0 0 auto",
         marginLeft: "8px",
         fontSize: "12px",
         color: red[500]
-    },
-    currentTag: {
-        flex: "0 0 auto",
-        marginLeft: "8px",
-        fontSize: "12px",
-        color: blue[500]
     },
     name: {
         fontSize: "14px",
@@ -108,11 +94,31 @@ const styles = (theme) => ({
         fontSize: "13px",
         color: grey[400]
     },
-    rowPlaying: {
+    // 正在看的位置(蓝): 直播页=正在播出的节目; 回看/时移=定位节目
+    rowCurrent: {
         paddingTop: "5px",
         paddingBottom: "5px",
-        backgroundColor: blue[50],
+        backgroundColor: blue[100],
+        boxShadow: "inset 3px 0 0 " + blue[600],
         borderBottom: "1px solid " + theme.palette.divider
+    },
+    // 正在播出但非正在看(回看/时移页的真实直播节目): 灰色调, 低于蓝色行
+    rowLiveNow: {
+        paddingTop: "5px",
+        paddingBottom: "5px",
+        backgroundColor: grey[100],
+        borderBottom: "1px solid " + theme.palette.divider
+    },
+    timeLiveNow: {
+        flex: "0 0 auto",
+        marginRight: "8px",
+        fontFamily: "monospace",
+        fontSize: "13px",
+        color: grey[600]
+    },
+    nameLiveNow: {
+        fontSize: "14px",
+        color: grey[800]
     }
 })
 
@@ -123,7 +129,7 @@ const fmtTime = (unix) => {
 }
 
 const VideoList = (props) => {
-    const { classes, list, now, currentStartTime, timeshift } = props
+    const { classes, list, now, currentStartTime, timeshift, live } = props
     // 按 12 点分成上午/下午两组
     const morning = []
     const afternoon = []
@@ -157,9 +163,11 @@ const VideoList = (props) => {
             pct = Math.floor(((now - videoInfo.startTime) /
                 (videoInfo.endTime - videoInfo.startTime)) * 100)
         }
-        // 渐变叠加在浅蓝凸显底上: 已填充部分更深一档, 未填充部分透出原底色
+        // 渐变叠加在凸显底色上: 已填充部分更深一档, 未填充部分透出原底色
+        // (正在看的行为 blue[100] 底填 blue[200]; 正在播出的灰色行为 grey[100] 底填 grey[400])
+        const fillColor = isCurrent ? blue[200] : grey[400]
         const progressStyle = pct > 0 && pct <= 100
-            ? { backgroundImage: "linear-gradient(to right, " + blue[100] +
+            ? { backgroundImage: "linear-gradient(to right, " + fillColor +
                 " " + pct + "%, transparent " + pct + "%)" }
             : null
         if (now > videoInfo.endTime) {
@@ -172,16 +180,16 @@ const VideoList = (props) => {
                     <ListItem divider={false} button
                         style={progressStyle}
                         className={isCurrent
-                            ? classes.rowPlaying + " hp-vl-current" : rowClass}>
+                            ? classes.rowCurrent + " hp-vl-current" : rowClass}>
                         <span className={isCurrent ? classes.timePlaying : classes.time}>
                             {time}
                         </span>
-                        {isCurrent ? <span className={classes.dotCurrent} /> : null}
+                        {isCurrent ? <span className={classes.dot} /> : null}
                         <ListItemText disableTypography
                             primary={videoInfo.title}
                             className={isCurrent ? classes.namePlaying : classes.name} />
                         {isCurrent
-                            ? <span className={classes.currentTag}>
+                            ? <span className={classes.liveTag}>
                                 {timeshift ? "时移" : "回看"}
                             </span> : null}
                     </ListItem>
@@ -189,25 +197,31 @@ const VideoList = (props) => {
             )
         }
         if (isCurrent || isLive) {
-            // 回看/时移定位节目(蓝点+蓝标签, 优先) / 正在播出(红点+红标签), 浅蓝底凸显
-            // 该节目正在直播, 点击进入直播页; hp-vl-current 供面板打开后自动滚动定位
+            // 正在看的位置(蓝: 直播页=正在播出的节目; 回看/时移=定位节目) /
+            // 正在播出但非正在看(灰: 回看/时移页里真实时间的直播节目)
+            // 蓝行滚动定位(hp-vl-current); 该节目正在直播, 点击进入直播页
             return (
                 <Link to={`/${config.version}/player/${props.channel}/`}
                     key={`${props.channel}-${videoInfo.startTime}`}
                     onClick={props.onVideoClick}>
                     <ListItem divider={false}
                         style={progressStyle}
-                        className={classes.rowPlaying + " hp-vl-current"}>
-                        <span className={classes.timePlaying}>{time}</span>
-                        <span className={isCurrent ? classes.dotCurrent : classes.dot} />
+                        className={(isCurrent ? classes.rowCurrent : classes.rowLiveNow) +
+                            (isCurrent ? " hp-vl-current" : "")}>
+                        <span className={isCurrent ? classes.timePlaying : classes.timeLiveNow}>
+                            {time}
+                        </span>
+                        {/* 正在看行显示红点; 灰行不显示点, 只用背景色区分进度 */}
+                        {isCurrent ? <span className={classes.dot} /> : null}
                         <ListItemText disableTypography
                             primary={videoInfo.title}
-                            className={classes.namePlaying} />
+                            className={isCurrent ? classes.namePlaying : classes.nameLiveNow} />
+                        {/* 正在看行显示红色标签(直播/时移/回看); 灰行不显示标签 */}
                         {isCurrent
-                            ? <span className={classes.currentTag}>
-                                {timeshift ? "时移" : "回看"}
+                            ? <span className={classes.liveTag}>
+                                {live ? "直播" : (timeshift ? "时移" : "回看")}
                             </span>
-                            : <span className={classes.liveTag}>直播</span>}
+                            : null}
                     </ListItem>
                 </Link>
             )

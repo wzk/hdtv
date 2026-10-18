@@ -101,6 +101,7 @@ class VideoListButton extends React.Component {
                                             now={this.state.now}
                                             currentStartTime={currentStartTime}
                                             timeshift={isTs}
+                                            live={!this.props.timeline}
                                             channel={this.props.channel}
                                             onVideoClick={this.closeList} />
                                     </List>
@@ -129,11 +130,11 @@ class VideoListButton extends React.Component {
     }
 
     // 返回"当前播放内容时刻"(秒): 用于节目单凸显/日期定位/进度背景填充
-    // 回看: 节目start + 已播秒数; 时移: ts-{begin}-{chosenAt} 的 begin + 已播秒数
+    // 直播: 播放头=实时边缘(now); 回看: 节目start + 已播秒数; 时移: begin + 已播秒数
     currentStart() {
         const { timeline } = this.props
         if (!timeline) {
-            return ""
+            return String(Math.floor(Date.now() / 1000))
         }
         let base = 0
         if (timeline.indexOf("ts-") === 0) {
