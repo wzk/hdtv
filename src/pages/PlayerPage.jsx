@@ -112,7 +112,6 @@ class PlayerPage extends React.Component {
             videoList: [],
             isSnackbarOpen: false
         }
-        console.log(props)
         this.slug = "" // 直播流文件名, 时移地址需要 (如 fhzx)
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)

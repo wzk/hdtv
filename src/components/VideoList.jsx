@@ -147,6 +147,21 @@ const VideoList = (props) => {
             videoInfo.startTime <= cur && cur < videoInfo.endTime
         // 正在播出: 按当前时间判断(回看模式下同样生效)
         const isLive = now >= videoInfo.startTime && now < videoInfo.endTime
+        // 进度背景填充(方案1): 仅播放头所在节目显示占节目时长的百分比;
+        // 回看/时移定位行按播放头算, 直播页正在播出行按当前时间算, 其余行不填充
+        let pct = 0
+        if (isCurrent) {
+            pct = Math.floor(((cur - videoInfo.startTime) /
+                (videoInfo.endTime - videoInfo.startTime)) * 100)
+        } else if (isLive) {
+            pct = Math.floor(((now - videoInfo.startTime) /
+                (videoInfo.endTime - videoInfo.startTime)) * 100)
+        }
+        // 渐变叠加在浅蓝凸显底上: 已填充部分更深一档, 未填充部分透出原底色
+        const progressStyle = pct > 0 && pct <= 100
+            ? { backgroundImage: "linear-gradient(to right, " + blue[100] +
+                " " + pct + "%, transparent " + pct + "%)" }
+            : null
         if (now > videoInfo.endTime) {
             // 已结束: 可点击回看; 回看定位节目用浅蓝底+蓝点+标签凸显
             return (
@@ -155,6 +170,7 @@ const VideoList = (props) => {
                 } key={`${props.channel}-${videoInfo.startTime}`}
                     onClick={props.onVideoClick}>
                     <ListItem divider={false} button
+                        style={progressStyle}
                         className={isCurrent
                             ? classes.rowPlaying + " hp-vl-current" : rowClass}>
                         <span className={isCurrent ? classes.timePlaying : classes.time}>
@@ -180,6 +196,7 @@ const VideoList = (props) => {
                     key={`${props.channel}-${videoInfo.startTime}`}
                     onClick={props.onVideoClick}>
                     <ListItem divider={false}
+                        style={progressStyle}
                         className={classes.rowPlaying + " hp-vl-current"}>
                         <span className={classes.timePlaying}>{time}</span>
                         <span className={isCurrent ? classes.dotCurrent : classes.dot} />
@@ -198,7 +215,7 @@ const VideoList = (props) => {
         // 未播出: 浅灰不可点
         return (
             <ListItem key={`${props.channel}-${videoInfo.startTime}`}
-                divider={false} className={rowClass}>
+                divider={false} style={progressStyle} className={rowClass}>
                 <span className={classes.timeWill}>{time}</span>
                 <ListItemText disableTypography
                     primary={videoInfo.title}

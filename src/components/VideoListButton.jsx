@@ -122,35 +122,32 @@ class VideoListButton extends React.Component {
             ],
             now: Math.floor(Date.now() / 1000)
         }
-        this.openList = this.openList.bind(this)
         this.closeList = this.closeList.bind(this)
         this.toggleList = this.toggleList.bind(this)
         this.setActiveDay = this.setActiveDay.bind(this)
         this.scrollToCurrent = this.scrollToCurrent.bind(this)
     }
 
-    // 返回"当前播放内容时刻"(秒): 用于节目单凸显与日期定位
-    // 回看: timeline "start-end" 的 start (即节目开始时刻)
-    // 时移: ts-{begin}-{chosenAt} 的 begin + 已播秒数(播放头会跨节目推进)
+    // 返回"当前播放内容时刻"(秒): 用于节目单凸显/日期定位/进度背景填充
+    // 回看: 节目start + 已播秒数; 时移: ts-{begin}-{chosenAt} 的 begin + 已播秒数
     currentStart() {
         const { timeline } = this.props
         if (!timeline) {
             return ""
         }
+        let base = 0
         if (timeline.indexOf("ts-") === 0) {
-            const begin = parseInt(timeline.slice(3).split("-")[0], 10)
-            if (isNaN(begin)) {
-                return ""
-            }
-            const video = document.querySelector("#playerContainer video")
-            const played = video && isFinite(video.currentTime)
-                ? Math.floor(video.currentTime) : 0
-            return String(begin + played)
+            base = parseInt(timeline.slice(3).split("-")[0], 10)
+        } else if (timeline.includes("-")) {
+            base = parseInt(timeline.split("-")[0], 10)
         }
-        if (timeline.includes("-")) {
-            return timeline.split("-")[0]
+        if (isNaN(base) || base <= 0) {
+            return ""
         }
-        return ""
+        const video = document.querySelector("#playerContainer video")
+        const played = video && isFinite(video.currentTime)
+            ? Math.floor(video.currentTime) : 0
+        return String(base + played)
     }
 
     // 日期 chip 文案: 今天 / 昨天 / 其余 "MM-dd 周几"
@@ -164,10 +161,6 @@ class VideoListButton extends React.Component {
         }
         const m = /^(\d{1,2})月(\d{1,2})日\[(.+?)\]/.exec(date || "")
         return m ? m[1] + "-" + m[2] + " " + m[3] : (date || "")
-    }
-
-    openList() {
-        this.setState({ isListShow: true })
     }
 
     closeList() {

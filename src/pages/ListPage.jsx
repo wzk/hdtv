@@ -397,7 +397,6 @@ class MiniDrawer extends React.Component {
 
     // 跳转到校内直播
     gotoLive() {
-        console.log(this.props.history)
         this.closeCarousel()
         this.props.history.push(`/${config.version}/list/channel/校内直播`)
     }
