@@ -203,12 +203,15 @@ class VideoListButton extends React.Component {
     }
 
     componentDidMount() {
-        // 定时刷新 now, 保证"正在播出"高亮随时间更新
+        // 定时刷新 now(5秒): 面板打开期间"正在播出"高亮与进度背景填充随播放/时间更新;
+        // 面板关闭时跳过 setState, 避免无谓重渲染
         this.timer = setInterval(() => {
-            this.setState({
-                now: Math.floor(Date.now() / 1000)
-            })
-        }, 1000 * 60)
+            if (this.state.isListShow) {
+                this.setState({
+                    now: Math.floor(Date.now() / 1000)
+                })
+            }
+        }, 5000)
     }
 
     componentWillUnmount() {
