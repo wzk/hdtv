@@ -6,6 +6,7 @@ import CardMedia from '@material-ui/core/CardMedia'
 import Grid from '@material-ui/core/Grid'
 import PeopleIcon from "@material-ui/icons/People"
 import grey from "@material-ui/core/colors/grey"
+import blue from "@material-ui/core/colors/blue"
 import { Transition } from 'react-transition-group'
 import config from "../../config/config"
 import { Link } from 'react-router-dom'
@@ -92,12 +93,23 @@ const styles = (theme) => ({
     rowName: {
         flex: "0 0 auto",
         width: "150px",
-        fontWeight: 500,
+        fontWeight: 600,
         fontSize: "14px",
-        color: grey[800],
+        color: blue[700],
         whiteSpace: "nowrap",
         overflow: "hidden",
-        textOverflow: "ellipsis"
+        textOverflow: "ellipsis",
+        // 频道名左侧蓝色小竖条, 与后面的节目名明确区分
+        "&:before": {
+            content: '""',
+            display: "inline-block",
+            width: "3px",
+            height: "12px",
+            marginRight: "6px",
+            borderRadius: "2px",
+            backgroundColor: blue[500],
+            verticalAlign: "middle"
+        }
     },
     rowTitle: {
         flex: "1 1 auto",
