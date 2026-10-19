@@ -72,7 +72,8 @@ class PlayerPage extends React.Component {
                             channel={match.params.channel}
                             title={this.state.title}
                             timeline={this.state.timeline}
-                            videoList={this.state.videoList} />
+                            videoList={this.state.videoList}
+                            canCatchup={this.state.currentCanCatchup} />
                         <RatioButton ratio={this.state.ratio}
                             setRatio={this.setRatio} />
                     </Toolbar>
@@ -86,6 +87,7 @@ class PlayerPage extends React.Component {
                         videoList={this.state.videoList}
                         ratio={this.state.ratio}
                         sourceCount={this.state.sourceList ? this.state.sourceList.length : 1}
+                        canCatchup={this.state.currentCanCatchup}
                         onPlayEnd={this.handlePlayEnd}
                         onTimeshift={this.handleTimeshift}
                         onBackToLive={this.handleBackToLive}
@@ -106,13 +108,15 @@ class PlayerPage extends React.Component {
             currentSourceName: "",
             currentSourceThumbnails: "",
             currentSourceIndex: "",
+            currentQuality: "",
+            currentCanCatchup: true,
             timeline: "",
             channel: "",
             ratio: "",
             videoList: [],
+            isDialogOpen: false,
             isSnackbarOpen: false
         }
-        this.slug = "" // 直播流文件名, 时移地址需要 (如 fhzx)
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)
         this.playNextVideo = this.playNextVideo.bind(this)
@@ -151,9 +155,9 @@ class PlayerPage extends React.Component {
             return
         }
 
-        // 同频道内时移起点变化(ts-A -> ts-B): 无需重新请求直播源, 直接重建时移地址
+        // 同频道内时移起点变化(ts-A -> ts-B): 无需重新请求直播源, 用当前源模板重建时移地址
         if (channel === prevChannel && this.isTimeshift(timeline) &&
-            this.isTimeshift(prevTimeline) && this.slug) {
+            this.isTimeshift(prevTimeline) && this.state.sourceList.length) {
             this.applyTimeshiftSource(timeline)
         } else {
             this.loadSource(channel, timeline)
@@ -185,28 +189,31 @@ class PlayerPage extends React.Component {
         }
     }
 
-    // 时移播放地址: {timeshiftHost}/review/{begin}-{chosenAt}-{节目名}.m3u8
-    // begin=开始播放时间, chosenAt=设置时移点的时刻; 换源只换节目名
-    buildShiftUrl(begin, chosenAt) {
-        return config.timeshiftHost + "/review/" + begin + "-" + chosenAt + "-" +
-            this.slug + ".m3u8"
+    // 时移播放地址: 用源的 timeShift 模板替换 {begin}/{chosenAt} 两个占位符 (v2 API)
+    buildShiftUrl(source, ts) {
+        return source.timeShift
+            .replace("{begin}", ts.begin).replace("{chosenAt}", ts.chosenAt)
     }
 
-    // 用当前 slug 按路由中的两个时间戳生成时移源并应用
+    // 点时移轴换时移点(ts-A -> ts-B): 无需重新请求, 用当前源 timeShift 模板重建地址
     applyTimeshiftSource(timeline) {
         const ts = this.parseTimeshift(timeline)
-        if (!ts.begin || !this.slug) {
+        const source = this.state.sourceList[this.state.currentSourceIndex || 0]
+        if (!ts.begin || !source || !source.timeShift) {
             return
         }
         this.setState({
-            currentSourcePath: this.buildShiftUrl(ts.begin, ts.chosenAt),
-            currentSourceThumbnails: "",
+            currentSourcePath: this.buildShiftUrl(source, ts),
+            currentSourceThumbnails: source.thumbnails
+                ? config.host + source.thumbnails : "",
             // 同步更新 timeline, 播放头位置等依赖时移起点
             timeline
         })
     }
 
-    // 加载频道播放源: 直播/回看走后端接口, 时移(ts-)基于直播源信息生成时移地址
+    // 加载频道播放源: 直播/回看走后端接口, 时移(ts-)按直播源请求并重建时移地址
+    // v2 API: 直播响应携带 quality/canCatchup/thumbnails({timestamp})/timeShift({begin}-{chosenAt}) 模板;
+    // 回看响应仅含播放地址, 模板复用直播响应的 (按频道缓存于 localStorage, 不缓存含时效 token 的 path)
     loadSource(channel, timeline) {
         const isTs = this.isTimeshift(timeline)
         const ts = isTs ? this.parseTimeshift(timeline) : null
@@ -221,29 +228,97 @@ class PlayerPage extends React.Component {
                             savedInfo.index
                     }
                     index = index < data.sourceList.length ? index : 0
-                    const source = data.sourceList[index]
-                    // 从直播流地址提取节目名 (如 .../fhzx.m3u8 -> fhzx)
-                    const m = /\.m3u8$/.test(source.path)
-                        ? source.path.replace(/.*\//, "").replace(/\.m3u8$/, "")
-                        : ""
-                    if (m) {
-                        this.slug = m
+                    let meta = this.loadSourceMeta(channel)
+                    if (isTs && data.sourceList.length) {
+                        // 直播响应: 顺便刷新源元数据缓存
+                        this.saveSourceMeta(channel, data.sourceList)
+                        meta = data.sourceList
                     }
-                    this.setState({
-                        title: data.title,
-                        sourceList: data.sourceList,
-                        currentSourceName: source.name,
-                        currentSourcePath: isTs && m
-                            ? this.buildShiftUrl(ts.begin, ts.chosenAt)
-                            : source.path,
-                        currentSourceIndex: index,
-                        timeline,
-                        channel,
-                        currentSourceThumbnails:
-                            isTs ? "" : config.host + source.thumbnails
-                    })
+                    if (!meta && data.sourceList.length) {
+                        // 首次进回看页且无缓存: 补拉直播源元数据后应用
+                        this.fetchSourceMeta(channel, data, index, timeline)
+                        return
+                    }
+                    this.applySource(data.title, data.sourceList, meta,
+                        index, timeline, channel, ts)
                 })
             })
+    }
+
+    // 直播源元数据缓存 (name/quality/canCatchup/thumbnails/timeShift)
+    loadSourceMeta(channel) {
+        try {
+            return JSON.parse(localStorage.getItem("meta_" + channel))
+        } catch (e) {
+            return null
+        }
+    }
+
+    saveSourceMeta(channel, sourceList) {
+        localStorage.setItem("meta_" + channel, JSON.stringify(
+            sourceList.map((s) => ({
+                name: s.name,
+                quality: s.quality,
+                canCatchup: s.canCatchup,
+                thumbnails: s.thumbnails,
+                timeShift: s.timeShift
+            }))
+        ))
+    }
+
+    // 补拉直播源元数据 (回看页首次进入且无缓存时); 失败则仅用回看响应自身数据播放
+    fetchSourceMeta(channel, reviewData, index, timeline) {
+        const ts = this.isTimeshift(timeline) ? this.parseTimeshift(timeline) : null
+        fetch(`${config.sources}/${channel}/`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (data && data.sourceList && data.sourceList.length) {
+                    this.saveSourceMeta(channel, data.sourceList)
+                    this.applySource(reviewData.title, reviewData.sourceList,
+                        data.sourceList, index, timeline, channel, ts)
+                } else {
+                    this.applySource(reviewData.title, reviewData.sourceList,
+                        reviewData.sourceList, index, timeline, channel, ts)
+                }
+            })
+            .catch(() => {
+                this.applySource(reviewData.title, reviewData.sourceList,
+                    reviewData.sourceList, index, timeline, channel, ts)
+            })
+    }
+
+    // 合并直播元数据与播放响应并应用播放源
+    // 直播/时移: 响应条目即完整数据; 回看: 响应仅 name/quality/canCatchup/path, 模板从 meta 按序合并
+    applySource(title, playList, metaList, index, timeline, channel, ts) {
+        const sourceList = playList.map((s, i) => {
+            const m = metaList && metaList[i] ? metaList[i] : {}
+            return {
+                name: s.name,
+                path: s.path,
+                quality: s.quality !== undefined ? s.quality : m.quality,
+                canCatchup: s.canCatchup !== undefined ? s.canCatchup : m.canCatchup,
+                thumbnails: s.thumbnails || m.thumbnails,
+                timeShift: s.timeShift || m.timeShift
+            }
+        })
+        const source = sourceList[index] || sourceList[0]
+        // 源不支持时移(无 timeShift 模板)时兜底直播流
+        const path = ts && source.timeShift
+            ? this.buildShiftUrl(source, ts)
+            : source.path
+        this.setState({
+            title: title,
+            sourceList: sourceList,
+            currentSourceName: source.name,
+            currentSourcePath: path,
+            currentSourceThumbnails: source.thumbnails
+                ? config.host + source.thumbnails : "",
+            currentSourceIndex: index,
+            currentQuality: source.quality,
+            currentCanCatchup: Boolean(source.canCatchup),
+            timeline,
+            channel
+        })
     }
 
     // 直播页点击 24 小时时移轴 -> 进入该时刻开始的时移播放 (点轴最右端即回到直播)
@@ -268,9 +343,7 @@ class PlayerPage extends React.Component {
             return
         }
         const nextIndex = ((this.state.currentSourceIndex || 0) + 1) % list.length
-        const source = list[nextIndex]
-        this.setSource(source.name, source.path,
-            config.host + source.thumbnails, nextIndex)
+        this.setSource(list[nextIndex], nextIndex)
     }
 
     // 回看播放结束: 自动连播下一个已播出的节目, 不弹确认框
@@ -316,37 +389,28 @@ class PlayerPage extends React.Component {
 
     // 设置选择的节目源并存储
     // 时移播放中换源: begin/chosenAt 两个时间戳都不变(时间对定义时移跨度,
-    // 服务器已处理播放了多久), 客户端只换节目名重建地址即可
-    setSource(name, path, thumbnails, index) {
+    // 服务器已处理播放了多久), 只用新源的 timeShift 模板重建地址
+    setSource(source, index) {
         const timeline = this.state.timeline || ""
-        const isTs = this.isTimeshift(timeline)
-        const m = /\.m3u8$/.test(path)
-            ? path.replace(/.*\//, "").replace(/\.m3u8$/, "")
-            : ""
-        if (isTs && m) {
-            const ts = this.parseTimeshift(timeline)
-            this.slug = m
-            this.setState({
-                currentSourceName: name,
-                currentSourceIndex: index,
-                currentSourcePath: this.buildShiftUrl(ts.begin, ts.chosenAt),
-                currentSourceThumbnails: ""
-            })
-        } else {
-            this.setState({
-                currentSourceName: name,
-                currentSourcePath: path,
-                currentSourceThumbnails: thumbnails,
-                currentSourceIndex: index
-            })
-        }
+        const ts = this.isTimeshift(timeline) ? this.parseTimeshift(timeline) : null
+        const path = ts && source.timeShift
+            ? this.buildShiftUrl(source, ts)
+            : source.path
+        this.setState({
+            currentSourceName: source.name,
+            currentSourcePath: path,
+            currentSourceThumbnails: source.thumbnails
+                ? config.host + source.thumbnails : "",
+            currentSourceIndex: index,
+            currentQuality: source.quality,
+            currentCanCatchup: Boolean(source.canCatchup)
+        })
         let channel = this.props.match.params.channel,
             savedInfo = JSON.parse(localStorage.getItem(channel))
         savedInfo = savedInfo ? savedInfo : {}
         localStorage.setItem(channel, JSON.stringify(Object.assign({}, savedInfo, {
             index
         })))
-        // console.log(savedInfo)
     }
 
     playNextVideo() {

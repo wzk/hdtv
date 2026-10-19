@@ -102,6 +102,7 @@ class VideoListButton extends React.Component {
                                             currentStartTime={currentStartTime}
                                             timeshift={isTs}
                                             live={!this.props.timeline}
+                                            canCatchup={this.props.canCatchup}
                                             channel={this.props.channel}
                                             onVideoClick={this.closeList} />
                                     </List>

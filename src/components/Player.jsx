@@ -15,7 +15,6 @@ import VolumeOffIcon from '@material-ui/icons/VolumeOff'
 import FullscreenIcon from '@material-ui/icons/Fullscreen'
 import FullscreenExitIcon from '@material-ui/icons/FullscreenExit'
 import Hls from 'hls.js'
-import config from "../../config/config"
 import "./player.css"
 
 // 方案B: 原生 <video> + hls.js, 单video元素由组件全程管理,
@@ -23,9 +22,7 @@ import "./player.css"
 
 const SAVE_INTERVAL = 10 * 1000
 const CONTROLS_HIDE_DELAY = 3000
-// 缩略图配置与原 flowplayer 插件一致: interval=1, startIndex=1, preload=false
-const THUMB_INTERVAL = 1
-const THUMB_START_INDEX = 1
+// 缩略图取图: v2 API 统一模板 {timestamp} 替换目标时刻绝对 Unix 秒 (直播/时移/回看共用)
 // 触屏拖动进度条时按此秒数取整取图, 减少移动网络请求量
 const THUMB_COARSE = 5
 // 直播 24 小时时移轴范围 (秒)
@@ -176,8 +173,9 @@ class Player extends React.Component {
             bufferedPct = Math.min(100, (s.buffered / s.duration) * 100)
         }
         const volumePct = (s.muted ? 0 : s.volume) * 100
-        // 直播式时移轴仅在电脑端(有鼠标)显示; 时移播放即"延迟的直播", 界面与直播完全一致
-        const showLiveBar = (mode === "live" || mode === "timeshift") && hasFinePointer
+        // 直播式时移轴仅在电脑端(有鼠标)显示; 源不支持回看(canCatchup=false)时直播页无轴
+        const showLiveBar = (mode === "live" || mode === "timeshift") &&
+            hasFinePointer && this.props.canCatchup !== false
         // 时移页播放头位置: 时移起点 + 已播秒数 在 24h 轴上的百分比
         let playheadPct = 0
         if (mode === "timeshift") {
@@ -438,8 +436,6 @@ class Player extends React.Component {
         this.switchingSource = false
         this.resumeChecked = false
         this.tsStarted = false
-        // 时移/直播轴缩略图: 节目模板缓存 {节目startTime: 模板url|null}
-        this.videoTpls = {}
 
         this.closeDialog = this.closeDialog.bind(this)
         this.continuePlayProcess = this.continuePlayProcess.bind(this)
@@ -472,6 +468,7 @@ class Player extends React.Component {
         this.onVolumeChange = this.onVolumeChange.bind(this)
         this.onHlsError = this.onHlsError.bind(this)
         this.applyRatio = this.applyRatio.bind(this)
+        this.onWinResize = this.onWinResize.bind(this)
         this.seekRelative = this.seekRelative.bind(this)
         this.setVolume = this.setVolume.bind(this)
 
@@ -540,6 +537,13 @@ class Player extends React.Component {
                 this.setState({ now: Date.now() })
             }
         }, 1000)
+
+        // 窗口尺寸变化(含旋转)后按新容器尺寸重算已选比例
+        window.addEventListener("resize", this.onWinResize)
+    }
+
+    onWinResize() {
+        this.applyRatio(this.props.ratio)
     }
 
     componentDidUpdate(prevProps) {
@@ -576,6 +580,7 @@ class Player extends React.Component {
 
     componentWillUnmount() {
         document.removeEventListener("keyup", this.keyupHandler)
+        window.removeEventListener("resize", this.onWinResize)
         FULLSCREEN_EVENTS.forEach((name) => {
             document.removeEventListener(name, this.onFullscreenChange)
         })
@@ -1188,48 +1193,6 @@ class Player extends React.Component {
         this.setState({ currentTime: pos.ratio * duration })
     }
 
-    // 在节目单中查找时间戳所属的节目: videoList = [{date, list:[{startTime, endTime}]}]
-    findVideoAt(ts) {
-        const groups = this.props.videoList
-        if (!groups || !groups.length) {
-            return null
-        }
-        for (let i = 0; i < groups.length; i++) {
-            const list = groups[i].list || []
-            for (let j = 0; j < list.length; j++) {
-                if (ts >= list[j].startTime && ts < list[j].endTime) {
-                    return list[j]
-                }
-            }
-        }
-        return null
-    }
-
-    // 懒加载节目缩略图模板 (来自后端 sources/{channel}/{start}-{end} 接口)
-    fetchTemplate(video, cb) {
-        const key = video.startTime
-        if (this.videoTpls[key] !== undefined) {
-            cb(this.videoTpls[key])
-            return
-        }
-        const channel = this.props.channel
-        fetch(`${config.sources}/${channel}/${video.startTime}-${video.endTime}`)
-            .then((res) => res.json())
-            .then((data) => {
-                let tpl = null
-                if (data && data.sourceList && data.sourceList.length &&
-                    data.sourceList[0].thumbnails) {
-                    tpl = config.host + data.sourceList[0].thumbnails
-                }
-                this.videoTpls[key] = tpl
-                cb(tpl)
-            })
-            .catch(() => {
-                this.videoTpls[key] = null
-                cb(null)
-            })
-    }
-
     // 事件位置 -> 直播式轴上的目标时间戳 ([当前-24h, 当前], 直播/时移页共用)
     axisTsByEvent(e) {
         const pos = this.barRatio(e)
@@ -1342,7 +1305,7 @@ class Player extends React.Component {
             }
             return
         }
-        // 回看: 单节目模板 (thumb.time 为相对秒)
+        // 回看: 统一模板按节目实际时钟换算绝对时间戳取图 (thumb.time 为相对秒)
         if (!this.props.thumbnails) {
             return
         }
@@ -1351,14 +1314,17 @@ class Player extends React.Component {
             return
         }
         const seconds = Math.floor(pos.ratio * duration)
+        // 节目实际时钟起点 (回看 timeline "start-end")
+        const videoStartTs = getTimelineStart(this.props.timeline)
         const barW = this.rectWidth(bar)
         const x = Math.min(Math.max(pos.ratio * barW, 84),
             Math.max(84, barW - 84))
 
         // 触屏拖动按 THUMB_COARSE 秒粒度取图(减少请求量), 时间仍显示精确秒
+        // 缓存键用绝对时间戳 (节目实际时钟), 避免跨节目回看时键冲突
         const cacheKey = coarse
-            ? Math.floor(seconds / THUMB_COARSE) * THUMB_COARSE
-            : seconds
+            ? videoStartTs + Math.floor(seconds / THUMB_COARSE) * THUMB_COARSE
+            : videoStartTs + seconds
 
         // ok=false 时只显示时间不显示图片(加载中或加载失败)
         const setThumb = (url, ok) => {
@@ -1374,8 +1340,7 @@ class Player extends React.Component {
         }
         this.lastThumbSecond = seconds
         const seq = ++this.thumbSeq
-        const url = this.props.thumbnails
-            .replace("{time}", cacheKey / THUMB_INTERVAL + THUMB_START_INDEX)
+        const url = this.props.thumbnails.replace("{timestamp}", cacheKey)
         setThumb(null, false) // 立即显示时间, 图片加载成功后再显示
         const img = new Image()
         img.onload = () => {
@@ -1393,7 +1358,7 @@ class Player extends React.Component {
         img.src = url
     }
 
-    // 直播/时移轴的缩略图: 悬停时间戳 -> 节目单查表 -> 懒加载该节目模板 -> 取图 (thumb.time 为绝对时间戳)
+    // 直播/时移轴的缩略图: 悬停时间戳 -> 统一模板替换绝对时间戳 (v2 API, thumb.time 为绝对时间戳)
     loadThumb(ts, coarse, clientX) {
         const bar = this.barRef.current
         if (!bar) {
@@ -1413,32 +1378,12 @@ class Player extends React.Component {
             setThumb(cached, cached !== null)
             return
         }
-        const video = this.findVideoAt(ts)
-        if (!video) {
-            // 节目单未加载或该点无节目覆盖: 只显示时间
-            // (不缓存, 节目单加载完成后同点悬停可重新查表)
-            setThumb(null, false)
-            return
-        }
-        const tpl = this.videoTpls[video.startTime]
-        if (tpl === undefined) {
-            setThumb(null, false) // 先显示时间, 模板加载后重取
-            this.fetchTemplate(video, () => {
-                // 模板到位后若仍悬停在原时间点, 重新加载该点缩略图
-                if (this.state.thumb && this.state.thumb.time === ts) {
-                    this.loadThumb(ts, coarse, clientX)
-                }
-            })
-            return
-        }
-        if (tpl === null) {
-            this.thumbCache[cacheKey] = null
+        if (!this.props.thumbnails) {
             setThumb(null, false)
             return
         }
         const seq = ++this.thumbSeq
-        const url = tpl
-            .replace("{time}", (cacheKey - video.startTime) / THUMB_INTERVAL + THUMB_START_INDEX)
+        const url = this.props.thumbnails.replace("{timestamp}", cacheKey)
         setThumb(null, false)
         const img = new Image()
         img.onload = () => {
@@ -1539,36 +1484,15 @@ class Player extends React.Component {
                 break
             }
             case "16:9": {
-                video.style["object-fit"] = "fill"
-                Object.assign(player.style, {
-                    "margin": "0 auto",
-                    "left": 0,
-                    "right": 0,
-                    "height": "100%",
-                    "width": player.clientHeight / 9 * 16 + "px"
-                })
+                this.applyFixedRatio(16, 9)
                 break
             }
             case "4:3": {
-                video.style["object-fit"] = "fill"
-                Object.assign(player.style, {
-                    "margin": "0 auto",
-                    "left": 0,
-                    "right": 0,
-                    "height": "100%",
-                    "width": player.clientHeight / 3 * 4 + "px"
-                })
+                this.applyFixedRatio(4, 3)
                 break
             }
             case "3:2": {
-                video.style["object-fit"] = "fill"
-                Object.assign(player.style, {
-                    "margin": "0 auto",
-                    "left": 0,
-                    "right": 0,
-                    "height": "100%",
-                    "width": player.clientHeight / 2 * 3 + "px"
-                })
+                this.applyFixedRatio(3, 2)
                 break
             }
             default: {
@@ -1578,10 +1502,39 @@ class Player extends React.Component {
                     "height": "",
                     "width": "",
                     "left": "",
-                    "right": ""
+                    "right": "",
+                    "top": ""
                 })
             }
         }
+    }
+
+    // 固定比例: 在容器内等比完整显示画面 (以宽高较小的一边为基准, 不足处留黑边),
+    // 竖屏手机上若按高度算宽会远超屏宽导致画面被裁掉
+    applyFixedRatio(rw, rh) {
+        const player = this.frameRef.current
+        const box = this.containerRef.current
+        const video = this.videoRef.current
+        if (!player || !box || !video) {
+            return
+        }
+        const cw = box.clientWidth
+        const ch = box.clientHeight
+        let width = cw
+        let height = cw / rw * rh
+        if (height > ch) {
+            height = ch
+            width = ch / rh * rw
+        }
+        video.style["object-fit"] = "fill"
+        Object.assign(player.style, {
+            "margin": "0 auto",
+            "left": 0,
+            "right": 0,
+            "top": Math.floor((ch - height) / 2) + "px",
+            "height": height + "px",
+            "width": width + "px"
+        })
     }
 
     closeDialog() {

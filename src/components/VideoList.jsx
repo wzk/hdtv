@@ -15,7 +15,9 @@ const styles = (theme) => ({
         display: "flex",
         alignItems: "flex-start",
         ["@media (max-width: 600px)"]: {
-            flexDirection: "column"
+            flexDirection: "column",
+            // 纵向堆叠时列容器必须撑满面板宽, 否则按内容收缩导致行只占一半
+            alignItems: "stretch"
         }
     },
     col: {
@@ -129,7 +131,7 @@ const fmtTime = (unix) => {
 }
 
 const VideoList = (props) => {
-    const { classes, list, now, currentStartTime, timeshift, live } = props
+    const { classes, list, now, currentStartTime, timeshift, live, canCatchup } = props
     // 按 12 点分成上午/下午两组
     const morning = []
     const afternoon = []
@@ -171,28 +173,35 @@ const VideoList = (props) => {
                 " " + pct + "%, transparent " + pct + "%)" }
             : null
         if (now > videoInfo.endTime) {
-            // 已结束: 可点击回看; 回看定位节目用浅蓝底+蓝点+标签凸显
+            // 已结束: 源支持回看(canCatchup)时可点击回看, 否则纯展示;
+            // 回看定位节目用浅蓝底+红点+红标签凸显
+            const item = (
+                <ListItem divider={false} button={Boolean(canCatchup)}
+                    style={progressStyle}
+                    className={isCurrent
+                        ? classes.rowCurrent + " hp-vl-current" : rowClass}>
+                    <span className={isCurrent ? classes.timePlaying : classes.time}>
+                        {time}
+                    </span>
+                    {isCurrent ? <span className={classes.dot} /> : null}
+                    <ListItemText disableTypography
+                        primary={videoInfo.title}
+                        className={isCurrent ? classes.namePlaying : classes.name} />
+                    {isCurrent
+                        ? <span className={classes.liveTag}>
+                            {timeshift ? "时移" : "回看"}
+                        </span> : null}
+                </ListItem>
+            )
+            if (!canCatchup) {
+                return <div key={`${props.channel}-${videoInfo.startTime}`}>{item}</div>
+            }
             return (
                 <Link to={`/${config.version}/player/${props.channel}/${
                     videoInfo.startTime}-${videoInfo.endTime}`
                 } key={`${props.channel}-${videoInfo.startTime}`}
                     onClick={props.onVideoClick}>
-                    <ListItem divider={false} button
-                        style={progressStyle}
-                        className={isCurrent
-                            ? classes.rowCurrent + " hp-vl-current" : rowClass}>
-                        <span className={isCurrent ? classes.timePlaying : classes.time}>
-                            {time}
-                        </span>
-                        {isCurrent ? <span className={classes.dot} /> : null}
-                        <ListItemText disableTypography
-                            primary={videoInfo.title}
-                            className={isCurrent ? classes.namePlaying : classes.name} />
-                        {isCurrent
-                            ? <span className={classes.liveTag}>
-                                {timeshift ? "时移" : "回看"}
-                            </span> : null}
-                    </ListItem>
+                    {item}
                 </Link>
             )
         }
