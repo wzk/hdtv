@@ -70,12 +70,15 @@ class VideoListButton extends React.Component {
         const isTs = Boolean(timeline && timeline.indexOf("ts-") === 0)
         const day = videoList[this.state.activeIndex]
         return (
+            // className 只加在触发按钮上: 面板必须留在未隐藏的根 div 里,
+            // 否则小屏下根 div display:none 会连带 position:fixed 的面板一起隐藏
             <div>
                 <Button color="inherit"
+                    className={this.props.className}
                     aria-haspopup="true"
                     onClick={this.toggleList}
                 >
-                    节目列表
+                    节目单
                 </Button>
                 <Collapse in={this.state.isListShow} timeout="auto"
                     unmountOnExit onEntered={this.scrollToCurrent}>
@@ -169,7 +172,15 @@ class VideoListButton extends React.Component {
         this.setState({ isListShow: false })
     }
     toggleList() {
-        // 每次打开默认定位到今天; 回看/时移模式自动切到当前播放内容所在日期
+        if (this.state.isListShow) {
+            this.closeList()
+        } else {
+            this.openList()
+        }
+    }
+
+    // 打开节目单: 每次打开默认定位到今天; 回看/时移模式自动切到当前播放内容所在日期
+    openList() {
         let activeIndex = 0
         const currentStartTime = this.currentStart()
         if (currentStartTime) {
@@ -181,10 +192,17 @@ class VideoListButton extends React.Component {
             }
         }
         this.setState({
-            isListShow: !this.state.isListShow,
+            isListShow: true,
             activeIndex,
             now: Math.floor(Date.now() / 1000)
         })
+    }
+
+    // 小屏"更多"菜单选择节目单时通过 openSignal 数值变化触发打开
+    componentWillReceiveProps(nextProps) {
+        if (nextProps.openSignal !== this.props.openSignal) {
+            this.openList()
+        }
     }
     setActiveDay(index) {
         this.setState({ activeIndex: index }, this.scrollToCurrent)

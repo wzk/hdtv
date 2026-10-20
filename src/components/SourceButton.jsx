@@ -76,6 +76,13 @@ class SourceButton extends React.Component {
         this.setState({ isShow: false })
     }
 
+    // 小屏"更多"菜单选择节目源时通过 openSignal 数值变化触发打开
+    componentWillReceiveProps(nextProps) {
+        if (nextProps.openSignal !== this.props.openSignal) {
+            this.setState({ isShow: true })
+        }
+    }
+
     // 画质徽章: 4k 紫色实底, hd/sd 蓝灰描边; quality 为 null(本地视频)不显示
     // onBar=true 时用 AppBar 蓝底白色系变体
     renderBadge(quality, onBar) {
@@ -105,8 +112,11 @@ class SourceButton extends React.Component {
         }
 
         return (
+            // className 只加在触发按钮上: 面板必须留在未隐藏的根 div 里,
+            // 否则小屏下根 div display:none 会连带 position:fixed 的面板一起隐藏
             <div>
                 <Button
+                    className={this.props.className}
                     aria-haspopup="true"
                     onClick={this.toggleList}
                     color="inherit"

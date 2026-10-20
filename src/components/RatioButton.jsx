@@ -29,13 +29,23 @@ class RatioButton extends React.Component {
         this.setState({ isShow: false })
     }
 
+    // 小屏"更多"菜单选择屏幕比例时通过 openSignal 数值变化触发打开
+    componentWillReceiveProps(nextProps) {
+        if (nextProps.openSignal !== this.props.openSignal) {
+            this.setState({ isShow: true })
+        }
+    }
+
     render() {
         const { classes } = this.props
         const last = ratioList.length - 1
 
         return (
+            // className 只加在触发按钮上: 面板必须留在未隐藏的根 div 里,
+            // 否则小屏下根 div display:none 会连带 position:fixed 的面板一起隐藏
             <div>
                 <Button
+                    className={this.props.className}
                     aria-haspopup="true"
                     onClick={this.toggleList}
                     color="inherit"

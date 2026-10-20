@@ -13,6 +13,7 @@ import VideoListButton from "../components/VideoListButton.jsx"
 import FavoriteButton from "../components/FavoriteButton.jsx"
 import SourceButton from "../components/SourceButton.jsx"
 import RatioButton from "../components/RatioButton.jsx"
+import MobileMenuButton from "../components/MobileMenuButton.jsx"
 import ColorSnackbar from "../components/ColorSnackbar.jsx"
 import config from "../../config/config"
 
@@ -31,6 +32,18 @@ const styles = {
     },
     appBar: {
         backgroundColor: blue[500]
+    },
+    // 小屏(≤600px)时顶栏四个按钮收纳为竖排三点"更多"菜单
+    pcOnly: {
+        ["@media (max-width: 600px)"]: {
+            display: "none"
+        }
+    },
+    mobileOnly: {
+        display: "none",
+        ["@media (max-width: 600px)"]: {
+            display: "block"
+        }
     }
 }
 
@@ -63,19 +76,31 @@ class PlayerPage extends React.Component {
                         >
                             {this.state.title}
                         </Typography>
-                        <SourceButton name={this.state.currentSourceName}
+                        <SourceButton className={classes.pcOnly}
+                            name={this.state.currentSourceName}
                             setSource={this.setSource}
                             sourceList={this.state.sourceList}
-                            channel={match.params.channel} />
-                        <FavoriteButton channel={match.params.channel} />
-                        <VideoListButton color="inherit"
+                            channel={match.params.channel}
+                            openSignal={this.state.mobileSignals.source} />
+                        <FavoriteButton className={classes.pcOnly}
+                            channel={match.params.channel}
+                            toggleSignal={this.state.mobileSignals.favorite}
+                            onFavoriteChange={this.handleFavChange} />
+                        <VideoListButton className={classes.pcOnly}
+                            color="inherit"
                             channel={match.params.channel}
                             title={this.state.title}
                             timeline={this.state.timeline}
                             videoList={this.state.videoList}
-                            canCatchup={this.state.currentCanCatchup} />
-                        <RatioButton ratio={this.state.ratio}
-                            setRatio={this.setRatio} />
+                            canCatchup={this.state.currentCanCatchup}
+                            openSignal={this.state.mobileSignals.videolist} />
+                        <RatioButton className={classes.pcOnly}
+                            ratio={this.state.ratio}
+                            setRatio={this.setRatio}
+                            openSignal={this.state.mobileSignals.ratio} />
+                        <MobileMenuButton className={classes.mobileOnly}
+                            onPick={this.handleMobilePick}
+                            isFavorite={this.state.isFav} />
                     </Toolbar>
                 </AppBar>
                 <MuiThemeProvider theme={theme}>
@@ -115,7 +140,16 @@ class PlayerPage extends React.Component {
             ratio: "",
             videoList: [],
             isDialogOpen: false,
-            isSnackbarOpen: false
+            isSnackbarOpen: false,
+            // 小屏"更多"菜单触发信号: 数值变化一次代表请求打开对应面板/动作
+            mobileSignals: {
+                source: 0,
+                favorite: 0,
+                videolist: 0,
+                ratio: 0
+            },
+            // 收藏状态: FavoriteButton 上报, 小屏更多菜单据此显示 收藏/取消收藏
+            isFav: false
         }
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)
@@ -124,6 +158,20 @@ class PlayerPage extends React.Component {
         this.handleTimeshift = this.handleTimeshift.bind(this)
         this.handleBackToLive = this.handleBackToLive.bind(this)
         this.handleSourceError = this.handleSourceError.bind(this)
+        this.handleMobilePick = this.handleMobilePick.bind(this)
+        this.handleFavChange = this.handleFavChange.bind(this)
+    }
+
+    // 小屏"更多"菜单选中项: 让对应按钮组件打开面板(收藏为切换收藏状态)
+    handleMobilePick(key) {
+        const signals = Object.assign({}, this.state.mobileSignals)
+        signals[key] = signals[key] + 1
+        this.setState({ mobileSignals: signals })
+    }
+
+    // FavoriteButton 收藏状态变化上报
+    handleFavChange(isFav) {
+        this.setState({ isFav })
     }
 
     componentDidMount() {
