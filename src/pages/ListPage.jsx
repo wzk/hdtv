@@ -358,6 +358,9 @@ class MiniDrawer extends React.Component {
     }
 
     componentDidMount() {
+        // 记住当前分类: 播放页左上角返回按钮回到进入播放页前的分类
+        localStorage.setItem("lastCategory", this.props.category)
+
         fetch(config.channels).then((res) => {
             res.json().then((channels) => {
                 this.freshFavoriteListInfo(channels)
@@ -388,6 +391,8 @@ class MiniDrawer extends React.Component {
             return
         }
 
+        // 分类切换时同样更新记忆, 返回按钮跟随最新分类
+        localStorage.setItem("lastCategory", this.props.category)
         this.applySelectCategory()
     }
 

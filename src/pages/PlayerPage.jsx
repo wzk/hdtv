@@ -59,12 +59,14 @@ const theme = createMuiTheme({
 class PlayerPage extends React.Component {
     render() {
         const { classes, match } = this.props
+        // 返回到进入播放页前浏览的分类(直链进入时兜底热门频道)
+        const lastCategory = localStorage.getItem("lastCategory") || "热门频道"
         return (
             <div className={classes.root}>
                 <AppBar position="static" classes={{ root: classes.appBar }}>
                     <Toolbar>
                         <Tooltip title="返回频道列表">
-                            <Link to={`/${config.version}/list/channel/热门频道`}>
+                            <Link to={`/${config.version}/list/channel/${lastCategory}`}>
                                 <IconButton className={classes.menuButton}
                                     color="inherit" aria-label="Home">
                                     <HomeIcon />
