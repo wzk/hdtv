@@ -296,11 +296,6 @@ class MiniDrawer extends React.Component {
                                 <Typography variant="headline" paragraph color="inherit">
                                     其他链接
                                 </Typography>
-                                <a href="https://hdtv.neu6.edu.cn/index.html">
-                                    <Typography variant="subheading" color="inherit">
-                                        旧版HDTV
-                                </Typography>
-                                </a>
                                 <a href="https://hdtv.neu6.edu.cn/soft/neu_diyp.apk">
                                     <Typography variant="subheading" color="inherit">
                                         安卓客户端
