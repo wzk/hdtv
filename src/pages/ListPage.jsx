@@ -249,7 +249,8 @@ class MiniDrawer extends React.Component {
                         <ChannelList isHidePicture={this.state.isHidePicture}
                             channelList={this.state.currentChannelList}
                             cacheNum={this.state.timestamp}
-                            filter={this.state.filter} 
+                            prevCacheNum={this.state.prevTimestamp}
+                            filter={this.state.filter}
                         />
                         {/* <AutoRotatingCarousel open={this.state.isCarouselOpen}
                             label="现在就开始直播" onClose={this.closeCarousel}
@@ -342,6 +343,8 @@ class MiniDrawer extends React.Component {
             currentChannelList: [],
             categoryList: [],
             timestamp: Date.now(),
+            // 上一次的 cacheNum: 缩略图双重背景垫底层, 新图加载完成前旧图不消失, 避免整页闪动
+            prevTimestamp: 0,
             filter: "",
             isCarouselOpen
         }
@@ -375,15 +378,13 @@ class MiniDrawer extends React.Component {
             })
         })
 
-        // 周期性更新信息
+        // 周期性更新信息 (缩略图/人数/标题, 每分钟刷新一次)
         this.timer = setInterval(() => {
             // console.log("change")
-            this.setState({
-                timestamp: Date.now()
-            })
+            this.bumpCache()
             this.freshDetail()
             this.getVideoMap(this.state.categoryList).then(this.freshTitle)
-        }, 1000 * 120)
+        }, 1000 * 60)
     }
 
     componentDidUpdate(prevProps) {
@@ -439,6 +440,14 @@ class MiniDrawer extends React.Component {
         this.setState({ filter })
     }
 
+    // 换缩略图缓存参数: 旧值挪给 prevTimestamp 作垫底背景, 新值拉取新图
+    bumpCache() {
+        this.setState((s) => ({
+            prevTimestamp: s.timestamp,
+            timestamp: Date.now()
+        }))
+    }
+
     // 获取节目观看人数等详细信息
     freshDetail() {
         let channels = this.state.categoryList
@@ -467,9 +476,7 @@ class MiniDrawer extends React.Component {
             })
         })
 
-        this.setState({
-            timestamp: Date.now()
-        })
+        this.bumpCache()
     }
 
     // 根据节目单刷新标题

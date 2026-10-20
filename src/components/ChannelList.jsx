@@ -148,6 +148,17 @@ const ViewerNums = (props) => (
 const ChannelItem = (props) => {
     const { classes } = props
     const isText = props.isHidePicture
+    // 缩略图双重背景: 新图在上, 上一次的旧图(浏览器已缓存)垫底;
+    // 新图加载完成前旧图一直显示, 加载完成后自然覆盖, 消除整页刷新闪动
+    // (首次加载无旧图, 只放单层)
+    const host = config.host
+    const mediaStyle = props.prevCacheNum
+        ? {
+            backgroundImage: `url("${host}${props.imageSrc}?${props.cacheNum}"), url("${host}${props.imageSrc}?${props.prevCacheNum}")`
+        }
+        : {
+            backgroundImage: `url("${host}${props.imageSrc}?${props.cacheNum}")`
+        }
     // console.log("ChannelItem render")
     return (
         <Transition in={props.isShow} unmountOnExit timeout={300}>
@@ -174,7 +185,7 @@ const ChannelItem = (props) => {
                             <Card classes={{ root: classes.root }}>
                                 <CardMedia
                                     className={classes.media}
-                                    image={`${config.host}${props.imageSrc}?${props.cacheNum}`}
+                                    style={mediaStyle}
                                     title={props.name ? props.name : "正在加载"}
                                 />
                                 <CardContent classes={{ root: classes.content }}>
@@ -213,6 +224,7 @@ class ChannelList extends React.Component {
                                     isHidePicture={isHidePicture}
                                     name={channel.name} title={channel.title}
                                     cacheNum={this.props.cacheNum}
+                                    prevCacheNum={this.props.prevCacheNum}
                                     channelId={channel.channelId}
                                     viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                     imageSrc={channel.snapshotUrl}
@@ -228,6 +240,7 @@ class ChannelList extends React.Component {
                                 isHidePicture={isHidePicture}
                                 name={channel.name} title={channel.title}
                                 cacheNum={this.props.cacheNum}
+                                prevCacheNum={this.props.prevCacheNum}
                                 channelId={channel.channelId}
                                 viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                 imageSrc={channel.snapshotUrl}
