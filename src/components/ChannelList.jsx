@@ -56,7 +56,11 @@ const styles = (theme) => ({
         height: "16px"
     },
     title: {
-        color: grey[700]
+        color: grey[700],
+        // 节目名超宽时省略, 保证所有卡片单行等高
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
     },
     channelListWrapper: {
         transition: "box-shadow 0.3s",
