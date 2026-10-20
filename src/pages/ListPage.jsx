@@ -454,7 +454,10 @@ class MiniDrawer extends React.Component {
                     i < len1; i++) {
                     for (let j = 0, list = channels[i].channelList,
                         len2 = list.length; j < len2; j++) {
-                        list[j].viewerNum = detailsMap[list[j].channelId].viewerNum
+                        // details 双字段: viewerNum 实时在线, catchupNum 回看人数
+                        const d = detailsMap[list[j].channelId] || {}
+                        list[j].viewerNum = d.viewerNum
+                        list[j].catchupNum = d.catchupNum
                     }
                 }
 

@@ -5,6 +5,7 @@ import CardContent from '@material-ui/core/CardContent'
 import CardMedia from '@material-ui/core/CardMedia'
 import Grid from '@material-ui/core/Grid'
 import PeopleIcon from "@material-ui/icons/People"
+import HistoryIcon from "@material-ui/icons/History"
 import grey from "@material-ui/core/colors/grey"
 import blue from "@material-ui/core/colors/blue"
 import { Transition } from 'react-transition-group'
@@ -123,7 +124,7 @@ const styles = (theme) => ({
     },
     rowNum: {
         flex: "0 0 auto",
-        minWidth: "64px",
+        minWidth: "96px",
         marginLeft: "12px",
         display: "flex",
         alignItems: "center",
@@ -133,6 +134,16 @@ const styles = (theme) => ({
         whiteSpace: "nowrap"
     }
 })
+
+// 观看人数: 在线人数 + 回看人数 (details 接口双字段, 简洁并排展示)
+const ViewerNums = (props) => (
+    <React.Fragment>
+        <PeopleIcon classes={{ root: props.classes.icon }} />
+        <span>{props.viewerNum ? props.viewerNum : 0}</span>
+        <HistoryIcon classes={{ root: props.classes.icon }} />
+        <span>{props.catchupNum ? props.catchupNum : 0}</span>
+    </React.Fragment>
+)
 
 const ChannelItem = (props) => {
     const { classes } = props
@@ -150,8 +161,9 @@ const ChannelItem = (props) => {
                         {props.title}
                     </span>
                     <span className={classes.rowNum}>
-                        <PeopleIcon classes={{ root: classes.icon }} />
-                        <span>{props.viewerNum ? props.viewerNum : 0}</span>
+                        <ViewerNums classes={classes}
+                            viewerNum={props.viewerNum}
+                            catchupNum={props.catchupNum} />
                     </span>
                 </Link>
             ) : (
@@ -169,8 +181,9 @@ const ChannelItem = (props) => {
                                     <div className={classes.firstLineWrapper}>
                                         <div>{props.name}</div>
                                         <div className={classes.viewPoepleWrapper}>
-                                            <PeopleIcon classes={{ root: classes.icon }} />
-                                            <span>{props.viewerNum ? props.viewerNum : 0}</span>
+                                            <ViewerNums classes={classes}
+                                                viewerNum={props.viewerNum}
+                                                catchupNum={props.catchupNum} />
                                         </div>
                                     </div>
                                     <div className={classes.title}>{props.title}</div>
@@ -201,7 +214,7 @@ class ChannelList extends React.Component {
                                     name={channel.name} title={channel.title}
                                     cacheNum={this.props.cacheNum}
                                     channelId={channel.channelId}
-                                    viewerNum={channel.viewerNum}
+                                    viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                     imageSrc={channel.snapshotUrl}
                                     isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
                                         toLowerCase().includes(this.props.filter)} />
@@ -216,7 +229,7 @@ class ChannelList extends React.Component {
                                 name={channel.name} title={channel.title}
                                 cacheNum={this.props.cacheNum}
                                 channelId={channel.channelId}
-                                viewerNum={channel.viewerNum}
+                                viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                 imageSrc={channel.snapshotUrl}
                                 isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
                                     toLowerCase().includes(this.props.filter)} />

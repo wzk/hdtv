@@ -8,6 +8,8 @@ import Tooltip from '@material-ui/core/Tooltip'
 import IconButton from '@material-ui/core/IconButton'
 import blue from "@material-ui/core/colors/blue"
 import HomeIcon from "@material-ui/icons/Home"
+import PeopleIcon from "@material-ui/icons/People"
+import HistoryIcon from "@material-ui/icons/History"
 import Player from "../components/Player.jsx"
 import VideoListButton from "../components/VideoListButton.jsx"
 import FavoriteButton from "../components/FavoriteButton.jsx"
@@ -26,6 +28,24 @@ const styles = {
     flex: {
         flex: 1,
     },
+    // 频道名: 可收缩(noWrap 省略), 给后面的节目名让位
+    titleFit: {
+        minWidth: "0"
+    },
+    // 正在播放的节目名称: 跟在频道名后, 小号浅色与频道名区分; 非大屏不显示
+    programName: {
+        minWidth: "0",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        fontSize: "14px",
+        fontWeight: 400,
+        color: "rgba(255,255,255,0.65)",
+        paddingLeft: "10px",
+        ["@media (max-width: 959px)"]: {
+            display: "none"
+        }
+    },
     menuButton: {
         marginLeft: -12,
         marginRight: 20,
@@ -43,6 +63,23 @@ const styles = {
         display: "none",
         ["@media (max-width: 600px)"]: {
             display: "block"
+        }
+    },
+    // 顶栏在线/回看人数: 标题右侧, 白色小字; marginLeft auto 保证小屏(节目名占位隐藏)下也靠右
+    viewerNums: {
+        display: "inline-flex",
+        alignItems: "center",
+        marginLeft: "auto",
+        marginRight: "8px",
+        fontSize: "13px",
+        color: "rgba(255,255,255,0.9)",
+        whiteSpace: "nowrap",
+        "& svg": {
+            fontSize: "15px",
+            marginRight: "3px"
+        },
+        "& span": {
+            marginRight: "8px"
         }
     }
 }
@@ -74,10 +111,21 @@ class PlayerPage extends React.Component {
                             </Link>
                         </Tooltip>
                         <Typography variant="title" color="inherit"
-                            className={classes.flex} noWrap
+                            className={classes.titleFit} noWrap
                         >
-                            {this.state.title}
+                            {this.state.channelName || this.state.title}
                         </Typography>
+                        {/* 正在播放的节目名称: 大屏跟在频道名后(小号浅色), 空时仅占位把按钮推到右侧 */}
+                        <span className={classes.flex + " " + classes.programName}>
+                            {this.currentProgramName()}
+                        </span>
+                        {/* 在线人数 + 回看人数 (details 接口, 约每分钟刷新) */}
+                        <span className={classes.viewerNums} id="hp-viewer-nums">
+                            <PeopleIcon />
+                            <span>{this.state.viewerNum || 0}</span>
+                            <HistoryIcon />
+                            <span>{this.state.catchupNum || 0}</span>
+                        </span>
                         <SourceButton className={classes.pcOnly}
                             name={this.state.currentSourceName}
                             setSource={this.setSource}
@@ -151,7 +199,12 @@ class PlayerPage extends React.Component {
                 ratio: 0
             },
             // 收藏状态: FavoriteButton 上报, 小屏更多菜单据此显示 收藏/取消收藏
-            isFav: false
+            isFav: false,
+            // 在线/回看人数 (details 接口, 约每分钟刷新)
+            viewerNum: "",
+            catchupNum: "",
+            // 频道名: 回看响应的 title 是节目名, 顶栏频道名必须从 channels 接口取
+            channelName: ""
         }
         this.setSource = this.setSource.bind(this)
         this.setRatio = this.setRatio.bind(this)
@@ -162,6 +215,7 @@ class PlayerPage extends React.Component {
         this.handleSourceError = this.handleSourceError.bind(this)
         this.handleMobilePick = this.handleMobilePick.bind(this)
         this.handleFavChange = this.handleFavChange.bind(this)
+        this.fetchDetails = this.fetchDetails.bind(this)
     }
 
     // 小屏"更多"菜单选中项: 让对应按钮组件打开面板(收藏为切换收藏状态)
@@ -174,6 +228,26 @@ class PlayerPage extends React.Component {
     // FavoriteButton 收藏状态变化上报
     handleFavChange(isFav) {
         this.setState({ isFav })
+    }
+
+    // 拉取本频道在线/回看人数 (details 接口, 约1分钟刷新一次)
+    fetchDetails(channel) {
+        if (!channel) {
+            return
+        }
+        fetch(config.details).then((res) => {
+            res.json().then((details) => {
+                for (let i = 0; i < details.length; i++) {
+                    if (details[i].channelId === channel) {
+                        this.setState({
+                            viewerNum: details[i].viewerNum || 0,
+                            catchupNum: details[i].catchupNum || 0
+                        })
+                        break
+                    }
+                }
+            })
+        }).catch(() => { })
     }
 
     componentDidMount() {
@@ -193,6 +267,34 @@ class PlayerPage extends React.Component {
             this.setState({ ratio: "16:9" })
             localStorage.setItem("ratio", "16:9")
         }
+
+        // 在线/回看人数: 立即拉取 + 每分钟刷新 (loadSource 异步设置 channel, 定时器按 state 取)
+        this.detailTimer = setInterval(() => {
+            this.fetchDetails(this.state.channel)
+        }, 60 * 1000)
+
+        // 频道名: sources 接口的 title 直播=频道名/回看=节目名, 统一从 channels 取真实频道名
+        this.fetchChannelName(channel)
+    }
+
+    fetchChannelName(channel) {
+        fetch(config.channels).then((res) => {
+            res.json().then((cats) => {
+                for (let i = 0; i < cats.length; i++) {
+                    const cl = cats[i].channelList || []
+                    for (let j = 0; j < cl.length; j++) {
+                        if (cl[j].channelId === channel) {
+                            this.setState({ channelName: cl[j].name })
+                            return
+                        }
+                    }
+                }
+            })
+        }).catch(() => { })
+    }
+
+    componentWillUnmount() {
+        clearInterval(this.detailTimer)
     }
 
     componentDidUpdate(prevProps, prevState) {
@@ -369,6 +471,8 @@ class PlayerPage extends React.Component {
             timeline,
             channel
         })
+        // 播放源就绪后立即刷新在线/回看人数
+        this.fetchDetails(channel)
     }
 
     // 直播页点击 24 小时时移轴 -> 进入该时刻开始的时移播放 (点轴最右端即回到直播)
@@ -507,6 +611,34 @@ class PlayerPage extends React.Component {
 
     setRatio(ratio) {
         this.setState({ ratio })
+    }
+
+    // 顶栏正在播放的节目名称: 直播=当前正在播出的节目; 回看=播放头所在节目(=路由节目);
+    // 时移=起点+已播秒数所在节目 (节目单数据 videoList 按天分组, 区间匹配)
+    currentProgramName() {
+        const list = this.state.videoList
+        if (!list || !list.length) {
+            return ""
+        }
+        const tl = this.state.timeline
+        const now = Math.floor(Date.now() / 1000)
+        let cur = now
+        if (this.isTimeshift(tl)) {
+            const video = document.querySelector("#playerContainer video")
+            cur = parseInt(tl.slice(3).split("-")[0], 10) +
+                (video && video.currentTime ? video.currentTime : 0)
+        } else if (tl) {
+            cur = parseInt(tl.split("-")[0], 10)
+        }
+        for (let d = 0; d < list.length; d++) {
+            const programs = list[d].list || []
+            for (let i = 0; i < programs.length; i++) {
+                if (programs[i].startTime <= cur && cur < programs[i].endTime) {
+                    return programs[i].title
+                }
+            }
+        }
+        return ""
     }
 
     getVideoList() {
