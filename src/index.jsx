@@ -123,7 +123,21 @@ const App = () => (
                 if (!page.startsWith("player") && !page.startsWith("list")) {
                     return (
                         <Redirect to={`/${config.version}/list/channel/热门频道`}
-                        /> 
+                        />
+                    )
+                }
+                // 只有完整有效结构才放行: list/channel/<分类> 或 player/<频道>[/<时间>]
+                // 结构残缺(/v2/list、/v2/list/channel、/v2/player)或伪前缀(/v2/playerxyz)
+                // 时上面 startsWith 放行但两个内容 Route 都匹配不上, 会渲染空白页,
+                // 这里按段校验, 不完整一律重定向热门频道
+                const seg = page.split("/")
+                const isList = seg[0] === "list" && seg[1] === "channel" &&
+                    seg.length === 3 && seg[2] !== ""
+                const isPlayer = seg[0] === "player" && seg.length >= 2 && seg[1] !== ""
+                if (!isList && !isPlayer) {
+                    return (
+                        <Redirect to={`/${config.version}/list/channel/热门频道`}
+                        />
                     )
                 }
 
