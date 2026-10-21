@@ -695,7 +695,11 @@ class Player extends React.Component {
             const hlsConf = {
                 xhrSetup: (xhr) => {
                     xhr.withCredentials = false
-                }
+                },
+                // 已播数据超出播放头后 60 秒即从 SourceBuffer 清除。
+                // hls.js 默认 backBufferLength=Infinity 永不清理后置缓冲,
+                // 长时间直播/回看内存线性增长导致浏览器越来越慢
+                backBufferLength: 60
             }
             if (this.mode() === "timeshift") {
                 // 时移流是无 endlist 的直播型流: 默认会从直播边缘开播,
