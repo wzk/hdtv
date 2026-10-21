@@ -428,6 +428,8 @@ class Player extends React.Component {
         this.thumbCache = {}
         this.lastThumbSecond = -1
         this.thumbSeq = 0
+        // 时移轴最后一次悬停显示的时间: 点击以它为 begin (所见即所得, 与缩略图一致)
+        this.lastAxisTs = 0
         this.dragging = false
         this.volumeDragging = false
         this.touchedAt = 0
@@ -636,6 +638,7 @@ class Player extends React.Component {
         this.tsStarted = false
         this.thumbCache = {}
         this.lastThumbSecond = -1
+        this.lastAxisTs = 0
         this.thumbSeq++
         this.setState({
             error: "",
@@ -1207,10 +1210,13 @@ class Player extends React.Component {
 
     onBarMouseDown(e) {
         // 直播/时移页共用轴: 点击某时刻 -> 进入该时刻开始的时移播放
-        // (点击轴最右端即回到直播)
+        // begin 优先取悬停缩略图显示的时间(lastAxisTs, 所见即所得);
+        // 无悬停记录(触屏直接点)时兜底按点击位置计算
+        // chosenAt 仍为点击当下(handleTimeshift 内取 Date.now())
         const mode = this.mode()
         if (mode === "live" || mode === "timeshift") {
-            const ts = this.axisTsByEvent(e)
+            const fallback = this.axisTsByEvent(e)
+            const ts = this.lastAxisTs > 0 ? this.lastAxisTs : fallback
             if (isFinite(ts) && this.props.onTimeshift) {
                 this.props.onTimeshift(Math.floor(ts))
             }
@@ -1375,6 +1381,9 @@ class Player extends React.Component {
         const x = Math.min(Math.max(((clientX - rect.left) / rect.width) * rect.width, 84),
             Math.max(84, rect.width - 84))
         const cacheKey = coarse ? Math.floor(ts / THUMB_COARSE) * THUMB_COARSE : ts
+        // 记录悬停显示的时间: 点击该轴以此为时移 begin (轴随真实时间右移,
+        // 点击瞬间重算会比显示值晚, 与缩略图对不上)
+        this.lastAxisTs = ts
 
         const setThumb = (url, ok) => {
             this.setState({ thumb: { url: url, x: x, time: ts, ok: ok } })
@@ -1415,6 +1424,8 @@ class Player extends React.Component {
     hideThumb() {
         this.thumbSeq++
         this.lastThumbSecond = -1
+        // 悬停结束清记录: 之后无 mousemove 直接点击(触屏)走兜底计算
+        this.lastAxisTs = 0
         if (this.state.thumb) {
             this.setState({ thumb: null })
         }
