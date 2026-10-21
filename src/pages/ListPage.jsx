@@ -471,7 +471,8 @@ class MiniDrawer extends React.Component {
             })
         })
 
-        this.bumpCache()
+        // 注意: 这里不能再 bumpCache——定时器已显式调用, 若在此重复调用,
+        // 每周期会连续生成两个几乎同时的 ts, 每张缩略图短时间请求 2 次
     }
 
     // 根据节目单刷新标题
