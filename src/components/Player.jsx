@@ -25,6 +25,8 @@ const CONTROLS_HIDE_DELAY = 3000
 // 缩略图取图: v2 API 统一模板 {timestamp} 替换目标时刻绝对 Unix 秒 (直播/时移/回看共用)
 // 触屏拖动进度条时按此秒数取整取图, 减少移动网络请求量
 const THUMB_COARSE = 5
+// 缩略图 404 失败后允许重试的间隔 (毫秒), 适配后端延迟生成截图
+const THUMB_FAIL_RETRY = 10 * 1000
 // 直播 24 小时时移轴范围 (秒)
 const TIMESHIFT_WINDOW = 24 * 3600
 // 直播时移轴仅在有精确指针(鼠标)的电脑端启用
@@ -1331,10 +1333,15 @@ class Player extends React.Component {
             this.setState({ thumb: { url: url, x: x, time: seconds, ok: ok } })
         }
 
-        // thumbCache: 有值为已加载成功的url, null为加载失败(避免重复请求)
+        // thumbCache: 字符串=成功url; {failAt}=失败时刻, 10秒内不重试, 过期后自动重试
         const cached = this.thumbCache[cacheKey]
-        if (cached !== undefined) {
-            setThumb(cached, cached !== null)
+        if (typeof cached === "string") {
+            setThumb(cached, true)
+            this.lastThumbSecond = seconds
+            return
+        }
+        if (cached && Date.now() - cached.failAt < THUMB_FAIL_RETRY) {
+            setThumb(null, false)
             this.lastThumbSecond = seconds
             return
         }
@@ -1350,7 +1357,7 @@ class Player extends React.Component {
             }
         }
         img.onerror = () => {
-            this.thumbCache[cacheKey] = null
+            this.thumbCache[cacheKey] = { failAt: Date.now() }
             if (seq === this.thumbSeq) {
                 setThumb(null, false)
             }
@@ -1374,8 +1381,12 @@ class Player extends React.Component {
         }
 
         const cached = this.thumbCache[cacheKey]
-        if (cached !== undefined) {
-            setThumb(cached, cached !== null)
+        if (typeof cached === "string") {
+            setThumb(cached, true)
+            return
+        }
+        if (cached && Date.now() - cached.failAt < THUMB_FAIL_RETRY) {
+            setThumb(null, false)
             return
         }
         if (!this.props.thumbnails) {
@@ -1393,7 +1404,7 @@ class Player extends React.Component {
             }
         }
         img.onerror = () => {
-            this.thumbCache[cacheKey] = null
+            this.thumbCache[cacheKey] = { failAt: Date.now() }
             if (seq === this.thumbSeq) {
                 setThumb(null, false)
             }
