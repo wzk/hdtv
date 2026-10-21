@@ -27,6 +27,10 @@ const CONTROLS_HIDE_DELAY = 3000
 const THUMB_COARSE = 5
 // 缩略图 404 失败后允许重试的间隔 (毫秒), 适配后端延迟生成截图
 const THUMB_FAIL_RETRY = 10 * 1000
+// 时移轴悬停放大镜: 光标周围 ±LENS_HALF 秒拉伸到 LENS_W 像素宽, 便于精确选点
+const LENS_W = 320
+const LENS_HALF = 60
+const LENS_SCALE = (LENS_HALF * 2) / LENS_W // 秒/像素 (0.375)
 // 直播 24 小时时移轴范围 (秒)
 const TIMESHIFT_WINDOW = 24 * 3600
 // 直播时移轴仅在有精确指针(鼠标)的电脑端启用
@@ -285,12 +289,34 @@ class Player extends React.Component {
                                     )}
                                 </div>
                                 {s.thumb ? (
-                                    <div className="hp-thumb" style={{ left: s.thumb.x + "px" }}>
+                                    <div className="hp-thumb hp-lens" ref={this.thumbRef}
+                                        style={{ left: s.thumb.x + "px" }}>
                                         {s.thumb.ok ? (
                                             <div className="hp-thumb-img"
                                                 style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
                                         ) : null}
                                         <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
+                                        {/* 放大镜刻度尺: 锚点±60秒拉伸, 蓝线=当前精确悬停位置 */}
+                                        {this.lensTicks ? (
+                                            <div className="hp-lens-ruler">
+                                                {this.lensTicks.map((t, i) => (
+                                                    <span key={i}
+                                                        className={t.major
+                                                            ? "hp-lens-tick hp-lens-major"
+                                                            : "hp-lens-tick"}
+                                                        style={{ left: t.x + "px" }}>
+                                                        {t.label
+                                                            ? <span className="hp-lens-label">{t.label}</span>
+                                                            : null}
+                                                    </span>
+                                                ))}
+                                                <span className="hp-lens-marker" style={{
+                                                    left: ((s.thumb.time - this.lensAnchor.ts) /
+                                                        LENS_SCALE +
+                                                        (this.lensAnchor.px - this.lensLeftPx)) + "px"
+                                                }} />
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : null}
                             </div>
@@ -415,6 +441,7 @@ class Player extends React.Component {
         this.videoRef = React.createRef()
         this.barRef = React.createRef()
         this.volumeRef = React.createRef()
+        this.thumbRef = React.createRef()
 
         this.hls = null
         this.savedInfo = {}
@@ -430,6 +457,10 @@ class Player extends React.Component {
         this.thumbSeq = 0
         // 时移轴最后一次悬停显示的时间: 点击以它为 begin (所见即所得, 与缩略图一致)
         this.lastAxisTs = 0
+        // 悬停放大镜锚点 {ts, px}(主轴悬停时记录, 镜内移动不重算) + 刻度与镜左沿
+        this.lensAnchor = null
+        this.lensTicks = null
+        this.lensLeftPx = 0
         this.dragging = false
         this.volumeDragging = false
         this.touchedAt = 0
@@ -639,6 +670,8 @@ class Player extends React.Component {
         this.thumbCache = {}
         this.lastThumbSecond = -1
         this.lastAxisTs = 0
+        this.lensAnchor = null
+        this.lensTicks = null
         this.thumbSeq++
         this.setState({
             error: "",
@@ -1307,9 +1340,50 @@ class Player extends React.Component {
         }
         if (mode === "live" || mode === "timeshift") {
             // 直播/时移共用轴: 悬停点为绝对时间戳
-            const ts = Math.floor(this.axisTsByEvent({ clientX: pos.clientX }))
+            const barW = this.rectWidth(bar)
+            const px = pos.ratio * barW
+            const thumbEl = this.thumbRef.current
+            // 放大镜内(气泡即镜体, pointer-events:auto): 光标相对锚点的位移
+            // 换算精确时间; 锚点不动(镜不跟随), 否则原地踏步永远选不准
+            const inLens = Boolean(thumbEl && e && e.target &&
+                thumbEl.contains(e.target) && this.lensAnchor)
+            let ts
+            if (inLens) {
+                ts = Math.floor(this.lensAnchor.ts +
+                    (px - this.lensAnchor.px) * LENS_SCALE)
+            } else {
+                // 主轴悬停: 以光标为锚点展开放大镜并生成刻度(镜内移动不再重算)
+                ts = Math.floor(this.axisTsByEvent({ clientX: pos.clientX }))
+                if (!isFinite(ts)) {
+                    return
+                }
+                this.lensAnchor = { ts: ts, px: px }
+                const left = Math.min(Math.max(px - LENS_W / 2, 0),
+                    Math.max(0, barW - LENS_W))
+                this.lensLeftPx = left
+                const pxPer10 = 10 / LENS_SCALE
+                const ticks = []
+                // 镜体贴轴端钳制后锚点会偏离镜中心, 最大偏移半个镜宽(=±60s=±d12),
+                // 故生成 ±12 格再按镜宽裁剪, 避免远端一侧刻度缺失出现空白
+                for (let d = -12; d <= 12; d++) {
+                    const tx = (px - left) + d * pxPer10
+                    if (tx < 0 || tx > LENS_W) {
+                        continue
+                    }
+                    const major = d % 3 === 0
+                    ticks.push({
+                        x: tx,
+                        major: major,
+                        label: major ? fmtClock(ts + d * 10) : ""
+                    })
+                }
+                this.lensTicks = ticks
+            }
             if (isFinite(ts)) {
-                this.loadThumb(ts, coarse, pos.clientX)
+                // 气泡(镜体)水平位置: 以锚点为中心钳制在轴宽内, 镜内移动保持不动
+                const cx = Math.min(Math.max(this.lensAnchor.px - LENS_W / 2, 0),
+                    Math.max(0, barW - LENS_W)) + LENS_W / 2
+                this.loadThumb(ts, coarse, cx)
             }
             return
         }
@@ -1372,14 +1446,12 @@ class Player extends React.Component {
     }
 
     // 直播/时移轴的缩略图: 悬停时间戳 -> 统一模板替换绝对时间戳 (v2 API, thumb.time 为绝对时间戳)
-    loadThumb(ts, coarse, clientX) {
+    // x: 气泡(放大镜)中心在轴内的像素位置, 由 updateThumb 按锚点计算并钳制
+    loadThumb(ts, coarse, x) {
         const bar = this.barRef.current
         if (!bar) {
             return
         }
-        const rect = bar.getBoundingClientRect()
-        const x = Math.min(Math.max(((clientX - rect.left) / rect.width) * rect.width, 84),
-            Math.max(84, rect.width - 84))
         const cacheKey = coarse ? Math.floor(ts / THUMB_COARSE) * THUMB_COARSE : ts
         // 记录悬停显示的时间: 点击该轴以此为时移 begin (轴随真实时间右移,
         // 点击瞬间重算会比显示值晚, 与缩略图对不上)
@@ -1426,6 +1498,8 @@ class Player extends React.Component {
         this.lastThumbSecond = -1
         // 悬停结束清记录: 之后无 mousemove 直接点击(触屏)走兜底计算
         this.lastAxisTs = 0
+        this.lensAnchor = null
+        this.lensTicks = null
         if (this.state.thumb) {
             this.setState({ thumb: null })
         }
