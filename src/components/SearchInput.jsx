@@ -11,6 +11,10 @@ import config from "../../config/config"
 
 const pad2 = (n) => (n < 10 ? "0" + n : "" + n)
 
+// 频道匹配前归一化: 忽略空格与连字符(实际数据 name="CCTV-1综合",
+// keyWord="CCTV-1zh[HD]", 直接搜 cctv1 会因连字符匹配不到)
+const norm = (s) => s.toLowerCase().replace(/[\s-]/g, "")
+
 // 节目时间: 「10月18日 20:00」(与列表页日期风格一致)
 const fmtTime = (ts) => {
     const d = new Date(ts * 1000)
@@ -51,6 +55,8 @@ const styles = (theme) => {
             overflowY: "auto"
         },
         // 上部: 频道名匹配行(单行), 行样式与共享 item 一致
+        // 注意: 颜色不能直接挂在 <a> 上——全局 a:link 规则(特异性更高)
+        // 会用 color:inherit 把它覆盖成 AppBar 的白色, 必须挂在内部 span
         chRow: Object.assign({}, base.item, {
             display: "block",
             textDecoration: "none",
@@ -58,6 +64,10 @@ const styles = (theme) => {
                 borderBottom: "none"
             }
         }),
+        chText: {
+            color: grey[900],
+            fontSize: "14px"
+        },
         // 下部: 节目行(两行式: 节目名+标签 / 频道·时间)
         row: Object.assign({}, base.item, {
             display: "block",
@@ -77,6 +87,8 @@ const styles = (theme) => {
         rowTitle: {
             flex: "0 1 auto",
             minWidth: "0",
+            // 颜色挂 span, 避开全局 a:link 的 color:inherit 覆盖
+            color: grey[900],
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis"
@@ -112,10 +124,11 @@ class SearchInput extends React.Component {
     render() {
         const { classes } = this.props
         const st = this.state
-        // 频道名本地即时匹配(不区分大小写), 每次渲染按当前输入重算
-        const kw = st.keyword.toLowerCase()
+        // 频道名本地即时匹配(name+channelId+keyWord 归一化包含), 每次渲染重算
+        const kw = norm(st.keyword)
         const channels = kw === "" ? [] : this.props.channelList.filter((c) =>
-            (c.name || "").toLowerCase().includes(kw))
+            norm(`${c.name || ""} ${c.channelId || ""} ${c.keyWord || ""}`)
+                .includes(kw))
         return (
             <ClickAwayListener onClickAway={this.closePanel}>
                 <div className={classes.root}>
@@ -138,7 +151,7 @@ class SearchInput extends React.Component {
                                                     className={classes.chRow + " hdtv-search-chrow"}
                                                     to={`/${config.version}/player/${c.channelId}`}
                                                     onClick={this.closePanel}>
-                                                    {c.name}
+                                                    <span className={classes.chText}>{c.name}</span>
                                                 </Link>
                                             ))}
                                         </div>
