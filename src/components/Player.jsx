@@ -300,7 +300,8 @@ class Player extends React.Component {
                                                 style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
                                         ) : null}
                                         <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
-                                        {/* 放大镜刻度尺: 仅停顿锁定后显示(lensOpen), 锚点±60秒拉伸, 蓝线=当前精确悬停位置 */}
+                                        {/* 放大镜刻度尺: 仅停顿锁定后显示(lensOpen), 锚点±150秒(5分钟)拉伸,
+                                            时间标注共5个(中间+两边各2个), 蓝线=当前精确悬停位置 */}
                                         {this.lensTicks && this.lensOpen ? (
                                             <div className="hp-lens-ruler">
                                                 {this.lensTicks.map((t, i) => (
@@ -310,7 +311,12 @@ class Player extends React.Component {
                                                             : "hp-lens-tick"}
                                                         style={{ left: t.x + "px" }}>
                                                         {t.label
-                                                            ? <span className="hp-lens-label">{t.label}</span>
+                                                            ? <span className="hp-lens-label" style={{
+                                                                // 镜端标注改内侧对齐, 避免文本半溢出镜体
+                                                                transform: t.x < 26 ? "none" :
+                                                                    (t.x > LENS_W - 26
+                                                                        ? "translateX(-100%)" : undefined)
+                                                            }}>{t.label}</span>
                                                             : null}
                                                     </span>
                                                 ))}
@@ -1396,11 +1402,21 @@ class Player extends React.Component {
                     if (tx < 0 || tx > LENS_W) {
                         continue
                     }
-                    const major = d % 3 === 0
+                    ticks.push({ x: tx, major: false, label: "" })
+                }
+                // 时间标注共 5 个: 中间锚点 + 两边各 2 个 (间隔 = 半跨/2 = 75 秒),
+                // 独立于 10 秒小刻度定位, 标注处加高刻度便于对位
+                const labelStep = LENS_HALF / 2
+                for (let n = -2; n <= 2; n++) {
+                    const off = n * labelStep
+                    const tx = (px - left) + off / LENS_SCALE
+                    if (tx < 0 || tx > LENS_W) {
+                        continue
+                    }
                     ticks.push({
                         x: tx,
-                        major: major,
-                        label: major ? fmtClock(ts + d * 10) : ""
+                        major: true,
+                        label: fmtClock(ts + off)
                     })
                 }
                 this.lensTicks = ticks
