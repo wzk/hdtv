@@ -37,9 +37,13 @@ const LENS_DWELL_MS = 1000
 const LENS_STICKY_PX = 30
 // 直播 24 小时时移轴范围 (秒)
 const TIMESHIFT_WINDOW = 24 * 3600
-// 直播时移轴仅在有精确指针(鼠标)的电脑端启用
-const hasFinePointer = typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: fine)").matches
+// 直播式时移轴仅在有精确指针(鼠标)且大屏(≥600px)时启用:
+// 小屏幕直播页=纯直播页面, 不提供时移选择 (2026-10-22 用户确认)
+// 600px 与项目移动端断点一致; 函数式按需求值, 窗口宽度跨过阈值后
+// 下一次渲染即生效(尺寸变化经 onWinResize→applyRatio 触发重渲染)
+const hasLiveBarEnv = () => typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: fine)").matches &&
+    window.matchMedia("(min-width: 600px)").matches
 
 const isPc = (() => {
     var userAgentInfo = navigator.userAgent
@@ -183,9 +187,9 @@ class Player extends React.Component {
             bufferedPct = Math.min(100, (s.buffered / s.duration) * 100)
         }
         const volumePct = (s.muted ? 0 : s.volume) * 100
-        // 直播式时移轴仅在电脑端(有鼠标)显示; 源不支持回看(canCatchup=false)时直播页无轴
+        // 直播式时移轴仅在电脑端大屏显示; 源不支持回看(canCatchup=false)时直播页无轴
         const showLiveBar = (mode === "live" || mode === "timeshift") &&
-            hasFinePointer && this.props.canCatchup !== false
+            hasLiveBarEnv() && this.props.canCatchup !== false
         // 时移页播放头位置: 时移起点 + 已播秒数 在 24h 轴上的百分比
         let playheadPct = 0
         if (mode === "timeshift") {
