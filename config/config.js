@@ -8,5 +8,6 @@ module.exports = {
     details: `${host}/${apiVersion}/details`,
     sources: `${host}/${apiVersion}/sources`,
     version,
-    list: `${host}/${apiVersion}/list`
+    list: `${host}/${apiVersion}/list`,
+    search: `${host}/${apiVersion}/search`
 }

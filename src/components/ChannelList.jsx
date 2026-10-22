@@ -8,7 +8,6 @@ import PeopleIcon from "@material-ui/icons/People"
 import HistoryIcon from "@material-ui/icons/History"
 import grey from "@material-ui/core/colors/grey"
 import blue from "@material-ui/core/colors/blue"
-import { Transition } from 'react-transition-group'
 import config from "../../config/config"
 import { Link } from 'react-router-dom'
 
@@ -25,22 +24,6 @@ const styles = (theme) => ({
     },
     icon: {
         fontSize: "16px"
-    },
-    entering: {
-        opacity: "0!important"
-    },
-    entered: {
-        opacity: "1!important"
-    },
-    exiting: {
-        opacity: "0!important"
-    },
-    exited: {
-        opacity: "0!important"
-    },
-    default: {
-        transition: `opacity 300ms linear`,
-        opacity: "1"
     },
     firstLineWrapper: {
         display: "flex",
@@ -164,52 +147,47 @@ const ChannelItem = (props) => {
             backgroundImage: `url("${host}${props.imageSrc}?${props.cacheNum}")`
         }
     // console.log("ChannelItem render")
-    return (
-        <Transition in={props.isShow} unmountOnExit timeout={300}>
-            {(state) => (isText ? (
-                <Link to={`/${config.version}/player/${props.channelId}`}
-                    className={`${classes.row} ${classes.default} ${classes[state]}`}>
-                    <span className={classes.rowName}>
-                        {props.name}
-                    </span>
-                    <span className={classes.rowTitle}>
-                        {props.title}
-                    </span>
-                    <span className={classes.rowNum}>
-                        <ViewerNums classes={classes}
-                            viewerNum={props.viewerNum}
-                            catchupNum={props.catchupNum} />
-                    </span>
-                </Link>
-            ) : (
-                <Grid item xs={12} sm={6} md={4} lg={3}
-                    classes={{ item: `${classes.default} ${classes[state]}` }}>
-                    <Link to={`/${config.version}/player/${props.channelId}`}>
-                        <div className={classes.channelListWrapper}>
-                            <Card classes={{ root: classes.root }}>
-                                <CardMedia
-                                    className={classes.media}
-                                    style={mediaStyle}
-                                    title={props.name ? props.name : "正在加载"}
-                                />
-                                <CardContent classes={{ root: classes.content }}>
-                                    <div className={classes.firstLineWrapper}>
-                                        <div>{props.name}</div>
-                                        <div className={classes.viewPoepleWrapper}>
-                                            <ViewerNums classes={classes}
-                                                viewerNum={props.viewerNum}
-                                                catchupNum={props.catchupNum} />
-                                        </div>
-                                    </div>
-                                    <div className={classes.title}>{props.title}</div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </Link>
-                </Grid>
-            ))}
-        </Transition>
-    )
+    return (isText ? (
+        <Link to={`/${config.version}/player/${props.channelId}`}
+            className={classes.row}>
+            <span className={classes.rowName}>
+                {props.name}
+            </span>
+            <span className={classes.rowTitle}>
+                {props.title}
+            </span>
+            <span className={classes.rowNum}>
+                <ViewerNums classes={classes}
+                    viewerNum={props.viewerNum}
+                    catchupNum={props.catchupNum} />
+            </span>
+        </Link>
+    ) : (
+        <Grid item xs={12} sm={6} md={4} lg={3}>
+            <Link to={`/${config.version}/player/${props.channelId}`}>
+                <div className={classes.channelListWrapper}>
+                    <Card classes={{ root: classes.root }}>
+                        <CardMedia
+                            className={classes.media}
+                            style={mediaStyle}
+                            title={props.name ? props.name : "正在加载"}
+                        />
+                        <CardContent classes={{ root: classes.content }}>
+                            <div className={classes.firstLineWrapper}>
+                                <div>{props.name}</div>
+                                <div className={classes.viewPoepleWrapper}>
+                                    <ViewerNums classes={classes}
+                                        viewerNum={props.viewerNum}
+                                        catchupNum={props.catchupNum} />
+                                </div>
+                            </div>
+                            <div className={classes.title}>{props.title}</div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </Link>
+        </Grid>
+    ))
 }
 
 const ChannelItemWidthStyles = withStyles(styles)(ChannelItem)
@@ -217,7 +195,6 @@ const ChannelItemWidthStyles = withStyles(styles)(ChannelItem)
 class ChannelList extends React.Component {
     render() {
         let isHidePicture = this.props.isHidePicture
-        // console.log(this.props.filter)
         return (
             <div>
                 {isHidePicture ? (
@@ -232,8 +209,7 @@ class ChannelList extends React.Component {
                                     channelId={channel.channelId}
                                     viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                     imageSrc={channel.snapshotUrl}
-                                    isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
-                                        toLowerCase().includes(this.props.filter)} />
+                                />
                             ))}
                         </div>
                     </div>
@@ -248,8 +224,7 @@ class ChannelList extends React.Component {
                                 channelId={channel.channelId}
                                 viewerNum={channel.viewerNum} catchupNum={channel.catchupNum}
                                 imageSrc={channel.snapshotUrl}
-                                isShow={`${channel.name} ${channel.title} ${channel.keyWord}`.
-                                    toLowerCase().includes(this.props.filter)} />
+                            />
                         ))}
                     </Grid>
                 )}

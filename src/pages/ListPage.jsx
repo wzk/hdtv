@@ -180,8 +180,7 @@ class MiniDrawer extends React.Component {
                         </Typography>
                         <div className={classes.flexAuto}></div>
                         <SearchInput className={classes.input}
-                            channelList={this.state.currentChannelList}
-                            setFilter={this.setFilter} />
+                            channelList={this.getAllChannels()} />
                         <div className={classes.showPictureButtonMargin}>
                             <IconButton onClick={() => {
                                 this.setIsHidePicture(!this.state.isHidePicture)
@@ -250,7 +249,6 @@ class MiniDrawer extends React.Component {
                             channelList={this.state.currentChannelList}
                             cacheNum={this.state.timestamp}
                             prevCacheNum={this.state.prevTimestamp}
-                            filter={this.state.filter}
                         />
                         {/* <AutoRotatingCarousel open={this.state.isCarouselOpen}
                             label="现在就开始直播" onClose={this.closeCarousel}
@@ -340,14 +338,12 @@ class MiniDrawer extends React.Component {
             timestamp: Date.now(),
             // 上一次的 cacheNum: 缩略图双重背景垫底层, 新图加载完成前旧图不消失, 避免整页闪动
             prevTimestamp: 0,
-            filter: "",
             isCarouselOpen
         }
         this.closeDrawer = this.closeDrawer.bind(this)
         this.openDrawer = this.openDrawer.bind(this)
         this.setCategory = this.setCategory.bind(this)
         this.setIsHidePicture = this.setIsHidePicture.bind(this)
-        this.setFilter = this.setFilter.bind(this)
         this.freshTitle = this.freshTitle.bind(this)
         this.freshDetail = this.freshDetail.bind(this)
         this.closeCarousel = this.closeCarousel.bind(this)
@@ -430,9 +426,15 @@ class MiniDrawer extends React.Component {
         this.setState({ isHidePicture })
     }
 
-    // 设置筛选节目的filter
-    setFilter(filter) {
-        this.setState({ filter })
+    // 搜索面板用的全量频道列表("所有频道"分类), 频道名匹配在面板内本地完成
+    getAllChannels() {
+        for (let i = 0, list = this.state.categoryList, len = list.length;
+            i < len; i++) {
+            if (list[i].name === "所有频道") {
+                return list[i].channelList
+            }
+        }
+        return this.state.currentChannelList
     }
 
     // 换缩略图缓存参数: 旧值挪给 prevTimestamp 作垫底背景, 新值拉取新图
