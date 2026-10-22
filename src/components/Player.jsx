@@ -32,7 +32,7 @@ const LENS_W = 320
 const LENS_HALF = 60
 const LENS_SCALE = (LENS_HALF * 2) / LENS_W // 秒/像素 (0.375)
 // 放大镜停顿锁定: 主轴移动中不弹镜(只普通预览), 停住该时长后才冻结锚点弹出
-const LENS_DWELL_MS = 200
+const LENS_DWELL_MS = 500
 // 镜体弹出后, 主轴上锚点附近该像素范围内的微小抖动不收镜, 保持稳定
 const LENS_STICKY_PX = 30
 // 直播 24 小时时移轴范围 (秒)
