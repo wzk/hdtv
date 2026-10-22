@@ -170,7 +170,7 @@ class SearchInput extends React.Component {
                                                     onClick={this.closePanel}>
                                                     <div className={classes.rowTop}>
                                                         <span className={classes.rowTitle}>{p.title}</span>
-                                                        {p.endTime === 0 && (
+                                                        {this.isLiveNow(p) && (
                                                             <span className={classes.liveTag}>直播中</span>
                                                         )}
                                                     </div>
@@ -268,9 +268,14 @@ class SearchInput extends React.Component {
         })
     }
 
-    // 节目跳转目标: 已结束 → 回看(起止区间); 仍在播(endTime=0) → 时移(该节目开播时刻起播)
+    // 仍在播出: 无下一条(endTime=0)或节目单结束时间晚于当前时刻
+    isLiveNow(p) {
+        return p.endTime === 0 || p.endTime > Math.floor(Date.now() / 1000)
+    }
+
+    // 跳转目标: 仍在播出 → 时移(该节目开播时刻起播); 已结束 → 回看(起止区间)
     programTarget(p) {
-        if (p.endTime === 0) {
+        if (this.isLiveNow(p)) {
             return `/${config.version}/player/${p.channelId}/ts-${p.startTime}-${Math.floor(Date.now() / 1000)}`
         }
         return `/${config.version}/player/${p.channelId}/${p.startTime}-${p.endTime}`
