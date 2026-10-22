@@ -300,8 +300,8 @@ class Player extends React.Component {
                                                 style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
                                         ) : null}
                                         <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
-                                        {/* 放大镜刻度尺: 仅停顿锁定后显示(lensOpen), 锚点±150秒(5分钟)拉伸,
-                                            时间标注共5个(中间+两边各2个), 蓝线=当前精确悬停位置 */}
+                                        {/* 放大镜刻度尺: 仅停顿锁定后显示(lensOpen), 镜体±150秒(5分钟)跨度,
+                                            时间标注镜内均布5个(间隔75秒), 蓝线=当前精确悬停位置 */}
                                         {this.lensTicks && this.lensOpen ? (
                                             <div className="hp-lens-ruler">
                                                 {this.lensTicks.map((t, i) => (
@@ -1404,19 +1404,18 @@ class Player extends React.Component {
                     }
                     ticks.push({ x: tx, major: false, label: "" })
                 }
-                // 时间标注共 5 个: 中间锚点 + 两边各 2 个 (间隔 = 半跨/2 = 75 秒),
-                // 独立于 10 秒小刻度定位, 标注处加高刻度便于对位
-                const labelStep = LENS_HALF / 2
-                for (let n = -2; n <= 2; n++) {
-                    const off = n * labelStep
-                    const tx = (px - left) + off / LENS_SCALE
-                    if (tx < 0 || tx > LENS_W) {
-                        continue
-                    }
+                // 时间标注共 5 个: 按镜内固定位置(左缘起每 1/4 镜宽 = 80px)生成,
+                // 间隔 = 80px * LENS_SCALE = 75 秒。不能按锚点 ±150 秒生成:
+                // 镜体贴轴端钳制后锚点偏离镜中心, 外侧标注会越出镜体被裁掉
+                // (两端悬停时数字显示不全); 按镜左缘生成则任意位置都恰好 5 个,
+                // 锚点居中(未钳制)时镜左缘 = 锚点-150秒, 与锚点±75/±150 完全一致
+                const t0 = Math.floor(ts - (px - left) * LENS_SCALE) // 镜左缘时刻
+                for (let n = 0; n <= 4; n++) {
+                    const tx = n * LENS_W / 4
                     ticks.push({
                         x: tx,
                         major: true,
-                        label: fmtClock(ts + off)
+                        label: fmtClock(t0 + tx * LENS_SCALE)
                     })
                 }
                 this.lensTicks = ticks
