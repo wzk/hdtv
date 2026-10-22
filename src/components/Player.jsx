@@ -31,6 +31,10 @@ const THUMB_FAIL_RETRY = 10 * 1000
 const LENS_W = 320
 const LENS_HALF = 60
 const LENS_SCALE = (LENS_HALF * 2) / LENS_W // 秒/像素 (0.375)
+// 放大镜停顿锁定: 主轴移动中不弹镜(只普通预览), 停住该时长后才冻结锚点弹出
+const LENS_DWELL_MS = 200
+// 镜体弹出后, 主轴上锚点附近该像素范围内的微小抖动不收镜, 保持稳定
+const LENS_STICKY_PX = 30
 // 直播 24 小时时移轴范围 (秒)
 const TIMESHIFT_WINDOW = 24 * 3600
 // 直播时移轴仅在有精确指针(鼠标)的电脑端启用
@@ -296,8 +300,8 @@ class Player extends React.Component {
                                                 style={{ backgroundImage: 'url("' + s.thumb.url + '")' }} />
                                         ) : null}
                                         <div className="hp-thumb-time">{this.fmtTime(s.thumb.time)}</div>
-                                        {/* 放大镜刻度尺: 锚点±60秒拉伸, 蓝线=当前精确悬停位置 */}
-                                        {this.lensTicks ? (
+                                        {/* 放大镜刻度尺: 仅停顿锁定后显示(lensOpen), 锚点±60秒拉伸, 蓝线=当前精确悬停位置 */}
+                                        {this.lensTicks && this.lensOpen ? (
                                             <div className="hp-lens-ruler">
                                                 {this.lensTicks.map((t, i) => (
                                                     <span key={i}
@@ -461,6 +465,9 @@ class Player extends React.Component {
         this.lensAnchor = null
         this.lensTicks = null
         this.lensLeftPx = 0
+        // 停顿锁定: false=扫动中(不显示刻度尺), true=停住后已弹镜(锚点冻结)
+        this.lensOpen = false
+        this.dwellTimer = null
         this.dragging = false
         this.volumeDragging = false
         this.touchedAt = 0
@@ -626,6 +633,7 @@ class Player extends React.Component {
         clearInterval(this.timer)
         clearInterval(this.clockTimer)
         clearTimeout(this.hideTimer)
+        clearTimeout(this.dwellTimer)
 
         const video = this.videoRef.current
         if (video) {
@@ -1356,7 +1364,19 @@ class Player extends React.Component {
                 ts = Math.floor(this.lensAnchor.ts +
                     (px - this.lensAnchor.px) * LENS_SCALE)
             } else {
-                // 主轴悬停: 以光标为锚点展开放大镜并生成刻度(镜内移动不再重算)
+                // 主轴悬停: 移动中只做普通预览(不显示刻度尺), 停住 LENS_DWELL_MS
+                // 后才冻结锚点弹出放大镜——主轴约百秒/px, 镜体逐像素跟随会疯狂
+                // 跳变且无法稳定进入镜体精调 (2026-10-22 停顿锁定方案)
+                if (this.lensOpen) {
+                    if (this.lensAnchor &&
+                        Math.abs(px - this.lensAnchor.px) <= LENS_STICKY_PX) {
+                        // 镜体已弹出: 锚点附近的微小抖动不动镜体, 保持稳定
+                        return
+                    }
+                    // 大幅移动 = 想换位置: 收起镜体回到扫动态
+                    this.lensOpen = false
+                }
+                // 以当前位置预备锚点/刻度数据(是否显示由 lensOpen 决定)
                 ts = Math.floor(this.axisTsByEvent({ clientX: pos.clientX }))
                 if (!isFinite(ts)) {
                     return
@@ -1382,6 +1402,19 @@ class Player extends React.Component {
                     })
                 }
                 this.lensTicks = ticks
+                // 重置停顿计时: 停住 LENS_DWELL_MS 后弹出刻度尺
+                if (this.dwellTimer) {
+                    clearTimeout(this.dwellTimer)
+                }
+                if (!coarse) {
+                    this.dwellTimer = setTimeout(() => {
+                        this.dwellTimer = null
+                        if (this.lensAnchor && this.lensTicks && !this.lensOpen) {
+                            this.lensOpen = true
+                            this.forceUpdate()
+                        }
+                    }, LENS_DWELL_MS)
+                }
             }
             if (isFinite(ts)) {
                 // 气泡(镜体)水平位置: 以锚点为中心钳制在轴宽内, 镜内移动保持不动
@@ -1502,6 +1535,11 @@ class Player extends React.Component {
         this.lastThumbSecond = -1
         // 悬停结束清记录: 之后无 mousemove 直接点击(触屏)走兜底计算
         this.lastAxisTs = 0
+        if (this.dwellTimer) {
+            clearTimeout(this.dwellTimer)
+            this.dwellTimer = null
+        }
+        this.lensOpen = false
         this.lensAnchor = null
         this.lensTicks = null
         if (this.state.thumb) {

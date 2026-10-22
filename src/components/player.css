@@ -168,6 +168,20 @@
     background-clip: content-box;
     -webkit-background-clip: content-box;
     border-radius: 4px;
+    /* 高于 hp-hint(26): 镜体激活期间浮在静音提示之上,
+       否则提示层截获命中会令光标脱离轴命中区触发 mouseleave 拆镜 */
+    z-index: 30;
+}
+
+/* 填补气泡与轴之间约 8px 空隙: 光标从轴连续移入镜体途中不脱离
+   轴命中区(否则 mouseleave 拆镜, 慢速移动永远进不了镜体) */
+.hp-thumb.hp-lens::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -12px;
+    height: 12px;
 }
 
 /* 放大镜刻度尺: 锚点±60秒拉伸, 每10秒一刻度, 每30秒标注时间;
@@ -388,5 +402,7 @@
     border-radius: 16px;
     font-size: 13px;
     cursor: pointer;
-    z-index: 26;
+    /* 必须低于 .hp-controls(20): 控件条是独立堆叠上下文, hint 若高于 20,
+       会压住其中 z-index 更大的放大镜镜体并截获命中, 光标移入镜体即拆镜 */
+    z-index: 15;
 }
