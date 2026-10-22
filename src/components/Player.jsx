@@ -27,10 +27,10 @@ const CONTROLS_HIDE_DELAY = 3000
 const THUMB_COARSE = 5
 // 缩略图 404 失败后允许重试的间隔 (毫秒), 适配后端延迟生成截图
 const THUMB_FAIL_RETRY = 10 * 1000
-// 时移轴悬停放大镜: 光标周围 ±LENS_HALF 秒拉伸到 LENS_W 像素宽, 便于精确选点
+// 时移轴悬停放大镜: 光标周围 ±LENS_HALF 秒(共5分钟)拉伸到 LENS_W 像素宽, 便于精确选点
 const LENS_W = 320
-const LENS_HALF = 60
-const LENS_SCALE = (LENS_HALF * 2) / LENS_W // 秒/像素 (0.375)
+const LENS_HALF = 150
+const LENS_SCALE = (LENS_HALF * 2) / LENS_W // 秒/像素 (0.9375)
 // 放大镜停顿锁定: 主轴移动中不弹镜(只普通预览), 停住该时长后才冻结锚点弹出
 const LENS_DWELL_MS = 1000
 // 镜体弹出后, 主轴上锚点附近该像素范围内的微小抖动不收镜, 保持稳定
@@ -1387,9 +1387,11 @@ class Player extends React.Component {
                 this.lensLeftPx = left
                 const pxPer10 = 10 / LENS_SCALE
                 const ticks = []
-                // 镜体贴轴端钳制后锚点会偏离镜中心, 最大偏移半个镜宽(=±60s=±d12),
-                // 故生成 ±12 格再按镜宽裁剪, 避免远端一侧刻度缺失出现空白
-                for (let d = -12; d <= 12; d++) {
+                // 镜体贴轴端钳制后锚点会偏离镜中心, 最大偏移整个镜宽,
+                // 故生成 ±镜宽秒数格再按镜宽裁剪, 避免远端一侧刻度缺失出现空白
+                // (格数随 LENS_SCALE 自适应, 硬编码会随尺度调整回归)
+                const dMax = Math.ceil(LENS_W / pxPer10)
+                for (let d = -dMax; d <= dMax; d++) {
                     const tx = (px - left) + d * pxPer10
                     if (tx < 0 || tx > LENS_W) {
                         continue
