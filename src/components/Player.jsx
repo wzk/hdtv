@@ -8,6 +8,7 @@ import DialogContent from '@material-ui/core/DialogContent'
 import DialogContentText from '@material-ui/core/DialogContentText'
 import DialogTitle from '@material-ui/core/DialogTitle'
 import Slide from '@material-ui/core/Slide'
+import ClickAwayListener from '@material-ui/core/ClickAwayListener'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PauseIcon from '@material-ui/icons/Pause'
 import VolumeUpIcon from '@material-ui/icons/VolumeUp'
@@ -27,6 +28,8 @@ const CONTROLS_HIDE_DELAY = 3000
 const THUMB_COARSE = 5
 // 缩略图 404 失败后允许重试的间隔 (毫秒), 适配后端延迟生成截图
 const THUMB_FAIL_RETRY = 10 * 1000
+// 回看倍速档位: 参考主流视频网站(B站/YouTube 等)通用档位 0.5~2 倍
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 // 时移轴悬停放大镜: 光标周围 ±LENS_HALF 秒(共5分钟)拉伸到 LENS_W 像素宽, 便于精确选点
 const LENS_W = 320
 const LENS_HALF = 150
@@ -371,6 +374,28 @@ class Player extends React.Component {
                                     ) : null}
                                 </React.Fragment>
                             )}
+                            {/* 回看倍速: 仅回看模式显示, 弹出面板选档(0.5~2) */}
+                            {mode === "review" ? (
+                                <ClickAwayListener onClickAway={this.closeSpeedPanel}>
+                                    <div className="hp-speed">
+                                        <button type="button" className="hp-speed-btn hdtv-speed-btn"
+                                            onClick={this.toggleSpeedPanel} aria-label="倍速播放">
+                                            {s.speed !== 1 ? s.speed + "x" : "倍速"}
+                                        </button>
+                                        {s.speedOpen ? (
+                                            <div className="hp-speed-pop hdtv-speed-pop">
+                                                {SPEEDS.map((v) => (
+                                                    <div key={v}
+                                                        className={"hp-speed-item" + (s.speed === v ? " on" : "")}
+                                                        onClick={this.setSpeed.bind(this, v)}>
+                                                        {v === 1 ? "1.0x" : v + "x"}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </ClickAwayListener>
+                            ) : null}
                             <div className="hp-spacer" />
                             {isPc ? (
                                 <React.Fragment>
@@ -447,7 +472,16 @@ class Player extends React.Component {
             isFullscreen: false,
             thumb: null,
             showUnmuteHint: false,
-            now: Date.now()
+            now: Date.now(),
+            // 回看倍速: 记忆上次选择, 仅回看模式生效(直播/时移恒为 1 倍)
+            speed: (function () {
+                try {
+                    const v = parseFloat(localStorage.getItem("speed"))
+                    if (SPEEDS.indexOf(v) !== -1) return v
+                } catch (e) { }
+                return 1
+            })(),
+            speedOpen: false
         }
 
         this.containerRef = React.createRef()
@@ -523,6 +557,9 @@ class Player extends React.Component {
         this.onWinResize = this.onWinResize.bind(this)
         this.seekRelative = this.seekRelative.bind(this)
         this.setVolume = this.setVolume.bind(this)
+        this.toggleSpeedPanel = this.toggleSpeedPanel.bind(this)
+        this.closeSpeedPanel = this.closeSpeedPanel.bind(this)
+        this.setSpeed = this.setSpeed.bind(this)
 
         this.onBarMouseDown = this.onBarMouseDown.bind(this)
         this.onBarMouseMove = this.onBarMouseMove.bind(this)
@@ -701,6 +738,11 @@ class Player extends React.Component {
             thumb: null
         })
 
+        // 倍速仅回看生效: 直播/时移恒为 1 倍(video 元素复用, 防旧倍速残留到直播流)
+        try {
+            video.playbackRate = this.mode() === "review" ? this.state.speed : 1
+        } catch (e) { }
+
         // 先销毁旧的 hls 实例再挂新流, video 元素复用, 不会出现两路同时播放
         if (this.hls) {
             this.hls.destroy()
@@ -874,6 +916,13 @@ class Player extends React.Component {
         }
 
         this.applyRatio(this.props.ratio)
+
+        // 恢复回看倍速(video.load()/换源会把 playbackRate 重置回默认 1 倍)
+        if (this.mode() === "review") {
+            try {
+                video.playbackRate = this.state.speed
+            } catch (e) { }
+        }
 
         // 时移流: 原生 HLS(Safari)会从直播边缘开播, 回到流起点(时移开始时刻)
         if (this.mode() === "timeshift" && !this.tsStarted) {
@@ -1109,6 +1158,30 @@ class Player extends React.Component {
             }
             localStorage.setItem("volume", JSON.stringify(video.volume))
         } catch (e) { }
+    }
+
+    toggleSpeedPanel() {
+        this.setState({ speedOpen: !this.state.speedOpen })
+    }
+
+    closeSpeedPanel() {
+        if (this.state.speedOpen) {
+            this.setState({ speedOpen: false })
+        }
+    }
+
+    // 选择倍速: 仅回看模式真正改 playbackRate, 持久化到 localStorage
+    setSpeed(speed) {
+        const video = this.videoRef.current
+        if (video && this.mode() === "review") {
+            try {
+                video.playbackRate = speed
+            } catch (e) { }
+        }
+        try {
+            localStorage.setItem("speed", String(speed))
+        } catch (e) { }
+        this.setState({ speed, speedOpen: false })
     }
 
     seekRelative(delta) {

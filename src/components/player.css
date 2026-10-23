@@ -295,6 +295,67 @@
     background: rgba(255, 255, 255, 0.15);
 }
 
+/* 回看倍速: 按钮 + 弹出选档面板(仅回看模式渲染) */
+.hp-speed {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.hp-speed-btn {
+    background: transparent;
+    border: none;
+    color: #fff;
+    opacity: 0.9;
+    font-size: 13px;
+    line-height: 1;
+    padding: 6px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.hp-speed-btn:hover {
+    opacity: 1;
+}
+
+.hp-speed-pop {
+    position: absolute;
+    right: 0;
+    bottom: 40px;
+    min-width: 92px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    z-index: 30;
+}
+
+.hp-speed-item {
+    padding: 7px 16px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #212121;
+    text-align: center;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.hp-speed-item:last-child {
+    border-bottom: none;
+}
+
+.hp-speed-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.hp-speed-item.on {
+    color: #2196f3;
+    background: #e3f2fd;
+    font-weight: 500;
+}
+
 /* 音量条 */
 .hp-volume {
     width: 70px;

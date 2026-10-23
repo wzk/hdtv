@@ -54,19 +54,41 @@ const styles = (theme) => {
             maxHeight: "70vh",
             overflowY: "auto"
         },
-        // 上部: 频道名匹配行(单行), 行样式与共享 item 一致
+        // 上部: 频道名匹配行(单行)——蓝色小竖条+加粗蓝名, 与频道列表页
+        // 「频道名主题蓝+加粗+左侧蓝竖条」的既有视觉语言一致, 与下方灰色
+        // 节目行(黑标题+灰副行)形成区分; 右侧浅灰「直播」提示
         // 注意: 颜色不能直接挂在 <a> 上——全局 a:link 规则(特异性更高)
         // 会用 color:inherit 把它覆盖成 AppBar 的白色, 必须挂在内部 span
         chRow: Object.assign({}, base.item, {
-            display: "block",
+            display: "flex",
+            alignItems: "center",
             textDecoration: "none",
             "&:last-child": {
                 borderBottom: "none"
             }
         }),
-        chText: {
-            color: grey[900],
-            fontSize: "14px"
+        chBar: {
+            flex: "0 0 auto",
+            width: "3px",
+            height: "12px",
+            marginRight: "8px",
+            borderRadius: "2px",
+            backgroundColor: blue[500]
+        },
+        chName: {
+            color: blue[700],
+            fontWeight: 600,
+            fontSize: "14px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis"
+        },
+        chGo: {
+            flex: "0 0 auto",
+            marginLeft: "auto",
+            paddingLeft: "8px",
+            fontSize: "12px",
+            color: grey[400]
         },
         // 下部: 节目行(两行式: 节目名+标签 / 频道·时间)
         row: Object.assign({}, base.item, {
@@ -151,7 +173,9 @@ class SearchInput extends React.Component {
                                                     className={classes.chRow + " hdtv-search-chrow"}
                                                     to={`/${config.version}/player/${c.channelId}`}
                                                     onClick={this.closePanel}>
-                                                    <span className={classes.chText}>{c.name}</span>
+                                                    <span className={classes.chBar} />
+                                                    <span className={classes.chName}>{c.name}</span>
+                                                    <span className={classes.chGo}>直播</span>
                                                 </Link>
                                             ))}
                                         </div>
