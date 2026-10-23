@@ -246,6 +246,8 @@ class SearchInput extends React.Component {
         this.searchSeq = 0
         this.debounceTimer = null
         this.inputRef = null
+        // 存活标记: 卸载后在途搜索响应不再 setState(如输完立即点进播放页)
+        this.alive = true
         this.smaller = this.smaller.bind(this)
         this.bigger = this.bigger.bind(this)
         this.handleChange = this.handleChange.bind(this)
@@ -297,13 +299,13 @@ class SearchInput extends React.Component {
         fetch(config.search + "/" + encodeURIComponent(keyword)).then((res) => {
             return res.json()
         }).then((data) => {
-            if (seq !== this.searchSeq) return
+            if (!this.alive || seq !== this.searchSeq) return
             this.setState({
                 programs: data.list || [],
                 loading: false
             })
         }, () => {
-            if (seq !== this.searchSeq) return
+            if (!this.alive || seq !== this.searchSeq) return
             this.setState({ programs: [], loading: false })
         })
     }
@@ -341,6 +343,7 @@ class SearchInput extends React.Component {
     }
 
     componentWillUnmount() {
+        this.alive = false
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null

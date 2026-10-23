@@ -356,17 +356,19 @@ class MiniDrawer extends React.Component {
         localStorage.setItem("lastCategory", this.props.category)
 
         fetch(config.channels).then((res) => {
-            res.json().then((channels) => {
-                this.freshFavoriteListInfo(channels)
-                this.setState({
-                    categoryList: channels
-                }, () => {
-                    this.freshDetail()
-                    this.getVideoMap(channels).then(this.freshTitle)
-                })
-
-                this.applySelectCategory()
+            return res.json()
+        }).then((channels) => {
+            this.freshFavoriteListInfo(channels)
+            this.setState({
+                categoryList: channels
+            }, () => {
+                this.freshDetail()
+                this.getVideoMap(channels).then(this.freshTitle)
             })
+
+            this.applySelectCategory()
+        }).catch(() => {
+            // 频道列表拉取失败: 页面骨架保留, 避免未处理 rejection
         })
 
         // 周期性更新信息 (缩略图/人数/标题, 每分钟刷新一次)
@@ -449,28 +451,30 @@ class MiniDrawer extends React.Component {
     freshDetail() {
         let channels = this.state.categoryList
         fetch(config.details).then((res) => {
-            res.json().then((details) => {
-                let detailsMap = {}
+            return res.json()
+        }).then((details) => {
+            let detailsMap = {}
 
-                // 使用map存储, 将查找修改的复杂度从O(n^2)降低到O(n)
-                for (let i of details) {
-                    detailsMap[i.channelId] = i
+            // 使用map存储, 将查找修改的复杂度从O(n^2)降低到O(n)
+            for (let i of details) {
+                detailsMap[i.channelId] = i
+            }
+            for (let i = 0, len1 = channels.length;
+                i < len1; i++) {
+                for (let j = 0, list = channels[i].channelList,
+                    len2 = list.length; j < len2; j++) {
+                    // details 双字段: viewerNum 实时在线, catchupNum 回看人数
+                    const d = detailsMap[list[j].channelId] || {}
+                    list[j].viewerNum = d.viewerNum
+                    list[j].catchupNum = d.catchupNum
                 }
-                for (let i = 0, len1 = channels.length;
-                    i < len1; i++) {
-                    for (let j = 0, list = channels[i].channelList,
-                        len2 = list.length; j < len2; j++) {
-                        // details 双字段: viewerNum 实时在线, catchupNum 回看人数
-                        const d = detailsMap[list[j].channelId] || {}
-                        list[j].viewerNum = d.viewerNum
-                        list[j].catchupNum = d.catchupNum
-                    }
-                }
+            }
 
-                this.setState({
-                    categoryList: channels
-                })
+            this.setState({
+                categoryList: channels
             })
+        }).catch(() => {
+            // 人数接口失败: 保留上一轮数据, 等下一分钟周期重试
         })
 
         // 注意: 这里不能再 bumpCache——定时器已显式调用, 若在此重复调用,
@@ -545,9 +549,11 @@ class MiniDrawer extends React.Component {
                 currentDate = new Date().getDate(),
                 videoMap = sessionStorage.getItem("videoMap")
 
-            // 如果节目单信息过期, 则发送请求更新节目单
+            // 如果节目单信息过期(超过 40 分钟)或跨天, 则发送请求更新节目单
+            // 注意比较方向: Date.now() - saveTime 才是已缓存时长(原写法恒为假,
+            // 缓存永不按 40 分钟失效, 同一天内节目标题一直用旧数据)
             if (!storeSaveTime || !videoMap ||
-                (saveTime - Date.now() > 40 * 60 * 1000) ||
+                (Date.now() - saveTime > 40 * 60 * 1000) ||
                 currentDate !== saveDate) {
                 for (let i = 0, list = channels, len = list.length;
                     i < len; i++) {
@@ -573,6 +579,10 @@ class MiniDrawer extends React.Component {
                             sessionStorage.setItem("videoMap",
                                 JSON.stringify(allVideo))
                             resolve(allVideo)
+                        }).catch(() => {
+                            // 任一频道节目单拉取失败: 本轮以空 map 收场,
+                            // 不写缓存, 下个刷新周期整体重试
+                            resolve({})
                         })
                     }
                 }

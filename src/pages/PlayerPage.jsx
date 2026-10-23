@@ -163,6 +163,8 @@ class PlayerPage extends React.Component {
                         ratio={this.state.ratio}
                         sourceCount={this.state.sourceList ? this.state.sourceList.length : 1}
                         canCatchup={this.state.currentCanCatchup}
+                        sourceError={this.state.sourceError}
+                        onRetrySource={this.handleRetrySource}
                         onPlayEnd={this.handlePlayEnd}
                         onTimeshift={this.handleTimeshift}
                         onBackToLive={this.handleBackToLive}
@@ -185,6 +187,8 @@ class PlayerPage extends React.Component {
             currentSourceIndex: "",
             currentQuality: "",
             currentCanCatchup: true,
+            // 播放源加载失败/无源(无效频道等): Player 显示错误界面而非卡加载态
+            sourceError: false,
             timeline: "",
             channel: "",
             ratio: "",
@@ -216,6 +220,13 @@ class PlayerPage extends React.Component {
         this.handleMobilePick = this.handleMobilePick.bind(this)
         this.handleFavChange = this.handleFavChange.bind(this)
         this.fetchDetails = this.fetchDetails.bind(this)
+        this.handleRetrySource = this.handleRetrySource.bind(this)
+    }
+
+    // 错误界面"重试": 按当前路由重新拉取播放源
+    handleRetrySource() {
+        this.setState({ sourceError: false })
+        this.loadSource(this.props.match.params.channel, this.state.timeline)
     }
 
     // 小屏"更多"菜单选中项: 让对应按钮组件打开面板(收藏为切换收藏状态)
@@ -369,31 +380,39 @@ class PlayerPage extends React.Component {
     loadSource(channel, timeline) {
         const isTs = this.isTimeshift(timeline)
         const ts = isTs ? this.parseTimeshift(timeline) : null
+        // 新一轮加载: 清除上一次的"无源"错误
+        this.setState({ sourceError: false })
         // 时移路由下按直播源请求 (空 timeline), 否则按回看 timeline 请求
         fetch(`${config.sources}/${channel}/${isTs ? "" : (timeline || "")}`)
-            .then((res) => {
-                res.json().then((data) => {
-                    let index = 0
+            .then((res) => res.json())
+            .then((data) => {
+                let index = 0
+                try {
                     const savedInfo = JSON.parse(localStorage.getItem(channel))
                     if (savedInfo && savedInfo.index) {
                         index =
                             savedInfo.index
                     }
-                    index = index < data.sourceList.length ? index : 0
-                    let meta = this.loadSourceMeta(channel)
-                    if (isTs && data.sourceList.length) {
-                        // 直播响应: 顺便刷新源元数据缓存
-                        this.saveSourceMeta(channel, data.sourceList)
-                        meta = data.sourceList
-                    }
-                    if (!meta && data.sourceList.length) {
-                        // 首次进回看页且无缓存: 补拉直播源元数据后应用
-                        this.fetchSourceMeta(channel, data, index, timeline)
-                        return
-                    }
-                    this.applySource(data.title, data.sourceList, meta,
-                        index, timeline, channel, ts)
-                })
+                } catch (e) { }
+                index = index < data.sourceList.length ? index : 0
+                let meta = this.loadSourceMeta(channel)
+                if (isTs && data.sourceList.length) {
+                    // 直播响应: 顺便刷新源元数据缓存
+                    this.saveSourceMeta(channel, data.sourceList)
+                    meta = data.sourceList
+                }
+                if (!meta && data.sourceList.length) {
+                    // 首次进回看页且无缓存: 补拉直播源元数据后应用
+                    this.fetchSourceMeta(channel, data, index, timeline)
+                    return
+                }
+                this.applySource(data.title, data.sourceList, meta,
+                    index, timeline, channel, ts)
+            })
+            .catch(() => {
+                // 接口失败/响应异常/频道不存在(sourceList 为空): 显示错误界面
+                // 而非卡死在"正在加载"(applySource 空源守卫会置同一状态)
+                this.setState({ sourceError: true })
             })
     }
 
@@ -453,6 +472,12 @@ class PlayerPage extends React.Component {
                 timeShift: s.timeShift || m.timeShift
             }
         })
+        if (!sourceList.length) {
+            // 无任何可播放源(无效频道 ID/后端异常): 显示错误界面,
+            // 不能往下走(下面解构 source.* 会 TypeError 且 promise 链静默死亡)
+            this.setState({ sourceError: true })
+            return
+        }
         const source = sourceList[index] || sourceList[0]
         // 源不支持时移(无 timeShift 模板)时兜底直播流
         const path = ts && source.timeShift

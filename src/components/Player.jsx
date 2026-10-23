@@ -223,13 +223,14 @@ class Player extends React.Component {
                         ? <div className="hp-title">{this.props.title}</div>
                         : null}
 
-                    {s.loading && !s.error ? (
+                    {s.loading && !s.error && !this.props.sourceError ? (
                         <div className="hp-center">
                             <div className="hp-spinner" />
                         </div>
                     ) : null}
 
-                    {this.props.path && !s.loading && !s.playing && !s.error ? (
+                    {this.props.path && !s.loading && !s.playing && !s.error &&
+                        !this.props.sourceError ? (
                         <div className="hp-center">
                             <button type="button" className="hp-bigplay"
                                 onClick={this.togglePlay} aria-label="播放">
@@ -238,11 +239,14 @@ class Player extends React.Component {
                         </div>
                     ) : null}
 
-                    {s.error ? (
+                    {/* 播放器内部错误(s.error) 或 上层无播放源(sourceError) 统一错误界面 */}
+                    {s.error || this.props.sourceError ? (
                         <div className="hp-error">
-                            <div className="hp-error-text">{s.error}</div>
+                            <div className="hp-error-text">
+                                {s.error || "无法获取播放源, 请稍后重试"}
+                            </div>
                             <Button className={classes.btn + " hp-error-btn"}
-                                onClick={this.retry}>
+                                onClick={s.error ? this.retry : this.props.onRetrySource}>
                                 重试
                             </Button>
                         </div>
