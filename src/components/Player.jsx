@@ -374,7 +374,8 @@ class Player extends React.Component {
                                     ) : null}
                                 </React.Fragment>
                             )}
-                            {/* 回看倍速: 仅回看模式显示, 弹出面板选档(0.5~2) */}
+                            <div className="hp-spacer" />
+                            {/* 回看倍速: 靠右放置(与音量/全屏同侧), 仅回看模式显示, 弹出面板选档(0.5~2) */}
                             {mode === "review" ? (
                                 <ClickAwayListener onClickAway={this.closeSpeedPanel}>
                                     <div className="hp-speed">
@@ -396,7 +397,6 @@ class Player extends React.Component {
                                     </div>
                                 </ClickAwayListener>
                             ) : null}
-                            <div className="hp-spacer" />
                             {isPc ? (
                                 <React.Fragment>
                                     <IconButton className={classes.btn}

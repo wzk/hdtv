@@ -54,9 +54,9 @@ const styles = (theme) => {
             maxHeight: "70vh",
             overflowY: "auto"
         },
-        // 上部: 频道名匹配行(单行)——蓝色小竖条+加粗蓝名, 与频道列表页
-        // 「频道名主题蓝+加粗+左侧蓝竖条」的既有视觉语言一致, 与下方灰色
-        // 节目行(黑标题+灰副行)形成区分; 右侧浅灰「直播」提示
+        // 上部: 频道名匹配行——蓝色小竖条+加粗蓝名+正在播出的节目(灰色常规,
+        // 与频道列表页「频道名蓝加粗/节目灰常规」的既有视觉语言一致),
+        // 右侧浅灰「直播」提示
         // 注意: 颜色不能直接挂在 <a> 上——全局 a:link 规则(特异性更高)
         // 会用 color:inherit 把它覆盖成 AppBar 的白色, 必须挂在内部 span
         chRow: Object.assign({}, base.item, {
@@ -76,9 +76,22 @@ const styles = (theme) => {
             backgroundColor: blue[500]
         },
         chName: {
+            flex: "0 0 auto",
+            maxWidth: "55%",
             color: blue[700],
             fontWeight: 600,
             fontSize: "14px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis"
+        },
+        // 正在播出的节目名: 灰色常规字重, 与加粗蓝名区分
+        chTitle: {
+            flex: "1 1 auto",
+            minWidth: "0",
+            marginLeft: "8px",
+            fontSize: "13px",
+            color: grey[600],
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis"
@@ -175,6 +188,9 @@ class SearchInput extends React.Component {
                                                     onClick={this.closePanel}>
                                                     <span className={classes.chBar} />
                                                     <span className={classes.chName}>{c.name}</span>
+                                                    {c.title ? (
+                                                        <span className={classes.chTitle}>{c.title}</span>
+                                                    ) : null}
                                                     <span className={classes.chGo}>直播</span>
                                                 </Link>
                                             ))}
