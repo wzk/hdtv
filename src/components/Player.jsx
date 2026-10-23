@@ -256,13 +256,14 @@ class Player extends React.Component {
 
                     <div className="hp-controls">
                         {mode === "review" && hasDuration ? (
+                            // 触摸事件用原生非 passive 监听(bindBarTouch): React 16 对
+                            // document 级 touchstart/touchmove 强制 passive, 合成事件里的
+                            // preventDefault 无效, 真机上浏览器会接管手势(滚动/touchcancel)
+                            // 导致拖动预览中断; 原生监听才能阻止默认行为
                             <div className="hp-progress" ref={this.barRef}
                                 onMouseDown={this.onBarMouseDown}
                                 onMouseMove={this.onBarMouseMove}
                                 onMouseLeave={this.onBarMouseLeave}
-                                onTouchStart={this.onBarTouchStart}
-                                onTouchMove={this.onBarTouchMove}
-                                onTouchEnd={this.onBarTouchEnd}
                             >
                                 <div className="hp-progress-inner">
                                     <div className="hp-buffered"
@@ -515,6 +516,8 @@ class Player extends React.Component {
         this.dragging = false
         this.volumeDragging = false
         this.touchedAt = 0
+        // 进度条触摸监听当前挂载的原生元素(随模式分支更换重挂, 见 bindBarTouch)
+        this.boundBar = null
         this.retryNetwork = 0
         this.retryMedia = 0
         // 多节目源自动切换: 连续失败计数(成功播放后归零) + 切换中标志(防重复跳源)
@@ -567,6 +570,8 @@ class Player extends React.Component {
         this.onBarTouchStart = this.onBarTouchStart.bind(this)
         this.onBarTouchMove = this.onBarTouchMove.bind(this)
         this.onBarTouchEnd = this.onBarTouchEnd.bind(this)
+        this.onBarTouchCancel = this.onBarTouchCancel.bind(this)
+        this.bindBarTouch = this.bindBarTouch.bind(this)
         this.onDocMouseMove = this.onDocMouseMove.bind(this)
         this.onDocMouseUp = this.onDocMouseUp.bind(this)
 
@@ -629,6 +634,9 @@ class Player extends React.Component {
 
         // 窗口尺寸变化(含旋转)后按新容器尺寸重算已选比例
         window.addEventListener("resize", this.onWinResize)
+
+        // 进度条触摸: 原生非 passive 监听(真机上才能阻止页面滚动手势)
+        this.bindBarTouch()
     }
 
     onWinResize() {
@@ -636,6 +644,8 @@ class Player extends React.Component {
     }
 
     componentDidUpdate(prevProps) {
+        // 进度条元素可能随模式分支更换(回看/直播轴是不同 div), 触摸监听重挂
+        this.bindBarTouch()
         if (prevProps.ratio !== this.props.ratio) {
             this.applyRatio(this.props.ratio)
         }
@@ -673,6 +683,13 @@ class Player extends React.Component {
         FULLSCREEN_EVENTS.forEach((name) => {
             document.removeEventListener(name, this.onFullscreenChange)
         })
+        if (this.boundBar) {
+            this.boundBar.removeEventListener("touchstart", this.onBarTouchStart)
+            this.boundBar.removeEventListener("touchmove", this.onBarTouchMove)
+            this.boundBar.removeEventListener("touchend", this.onBarTouchEnd)
+            this.boundBar.removeEventListener("touchcancel", this.onBarTouchCancel)
+            this.boundBar = null
+        }
 
         // 返回主页前存储信息 (视频不存在时安全跳过, 修复原版此处崩溃导致播放器无法卸载的问题)
         this.saveProgress()
@@ -1396,6 +1413,8 @@ class Player extends React.Component {
         if (!this.dragging) {
             return
         }
+        // 阻止合成鼠标事件(mousedown/click), 避免松手后误触发 seek/暂停
+        e.preventDefault()
         this.dragging = false
         // 松手: 跳转到预览位置(即拖动时显示的当前时间)
         const thumb = this.state.thumb
@@ -1408,6 +1427,38 @@ class Player extends React.Component {
         }
         this.hideThumb()
         this.showControls()
+    }
+
+    // 手势被浏览器接管(滚动等)时收尾: 结束拖动, 收起预览
+    onBarTouchCancel() {
+        if (this.dragging) {
+            this.dragging = false
+            this.hideThumb()
+            this.showControls()
+        }
+    }
+
+    // 进度条触摸事件挂原生非 passive 监听(渲染处注释): React 16 的合成
+    // touch 事件是 passive, preventDefault 无效, 真机上浏览器会接管手势
+    // 导致拖动预览中断。回看/直播轴是不同 DOM 节点, 元素更换时重挂
+    bindBarTouch() {
+        const bar = this.barRef.current
+        if (bar === this.boundBar) {
+            return
+        }
+        if (this.boundBar) {
+            this.boundBar.removeEventListener("touchstart", this.onBarTouchStart)
+            this.boundBar.removeEventListener("touchmove", this.onBarTouchMove)
+            this.boundBar.removeEventListener("touchend", this.onBarTouchEnd)
+            this.boundBar.removeEventListener("touchcancel", this.onBarTouchCancel)
+        }
+        this.boundBar = bar
+        if (bar) {
+            bar.addEventListener("touchstart", this.onBarTouchStart, { passive: false })
+            bar.addEventListener("touchmove", this.onBarTouchMove, { passive: false })
+            bar.addEventListener("touchend", this.onBarTouchEnd, { passive: false })
+            bar.addEventListener("touchcancel", this.onBarTouchCancel)
+        }
     }
 
     onBarMouseMove(e) {
